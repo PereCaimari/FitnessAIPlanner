@@ -4,11 +4,27 @@ import './index.css'
 
 type Section = 'summary' | 'history' | 'planner'
 type Workout = { id: number; title: string; type: string; date: string; duration: string }
+type Exercise = { id: string; name: string; group: string; sets: number; reps: number; weight: number }
 
 const initialWorkouts: Workout[] = [
   { id: 1, title: 'Fuerza — Tren superior', type: 'Gimnasio', date: 'Hoy, 08:30', duration: '52 min' },
   { id: 2, title: 'Carrera suave', type: 'Running', date: 'Ayer, 18:10', duration: '34 min' },
   { id: 3, title: 'Movilidad y core', type: 'Personalizado', date: '12 ago, 07:45', duration: '25 min' },
+]
+
+const exerciseCatalog: Exercise[] = [
+  { id: 'bench', name: 'Press banca', group: 'Pecho', sets: 3, reps: 10, weight: 40 },
+  { id: 'incline-bench', name: 'Press inclinado con mancuernas', group: 'Pecho', sets: 3, reps: 10, weight: 18 },
+  { id: 'squat', name: 'Sentadilla con barra', group: 'Piernas', sets: 4, reps: 8, weight: 60 },
+  { id: 'leg-press', name: 'Prensa de piernas', group: 'Piernas', sets: 3, reps: 12, weight: 100 },
+  { id: 'deadlift', name: 'Peso muerto', group: 'Espalda', sets: 3, reps: 6, weight: 70 },
+  { id: 'row', name: 'Remo con barra', group: 'Espalda', sets: 3, reps: 10, weight: 35 },
+  { id: 'lat-pulldown', name: 'Jalón al pecho', group: 'Espalda', sets: 3, reps: 12, weight: 45 },
+  { id: 'shoulder-press', name: 'Press militar', group: 'Hombros', sets: 3, reps: 10, weight: 25 },
+  { id: 'lateral-raises', name: 'Elevaciones laterales', group: 'Hombros', sets: 3, reps: 15, weight: 8 },
+  { id: 'biceps-curl', name: 'Curl de bíceps', group: 'Brazos', sets: 3, reps: 12, weight: 12 },
+  { id: 'triceps-pushdown', name: 'Extensión de tríceps', group: 'Brazos', sets: 3, reps: 12, weight: 20 },
+  { id: 'plank', name: 'Plancha', group: 'Core', sets: 3, reps: 45, weight: 0 },
 ]
 
 const navItems: { id: Section; label: string; icon: string }[] = [
@@ -25,12 +41,19 @@ function App() {
   const [newType, setNewType] = useState('Gimnasio')
   const [goal, setGoal] = useState('')
   const [plan, setPlan] = useState('')
+  const [selectedExercises, setSelectedExercises] = useState<Exercise[]>([])
+  const [exerciseSearch, setExerciseSearch] = useState('')
+  const [exerciseGroup, setExerciseGroup] = useState('Todos')
 
   const addWorkout = () => {
     if (!newTitle.trim()) return
-    setWorkouts([{ id: Date.now(), title: newTitle, type: newType, date: 'Ahora', duration: '—' }, ...workouts])
+    const details = newType === 'Gimnasio' && selectedExercises.length > 0 ? ` · ${selectedExercises.length} ejercicios` : ''
+    setWorkouts([{ id: Date.now(), title: `${newTitle}${details}`, type: newType, date: 'Ahora', duration: '—' }, ...workouts])
     setNewTitle('')
     setShowForm(false)
+    setSelectedExercises([])
+    setExerciseSearch('')
+    setExerciseGroup('Todos')
     setSection('history')
   }
 
@@ -51,7 +74,7 @@ function App() {
       {section === 'history' && <History workouts={workouts} onAdd={() => setShowForm(true)} />}
       {section === 'planner' && <Planner goal={goal} setGoal={setGoal} plan={plan} onGenerate={generatePlan} />}
     </main>
-    {showForm && <div className="modal-backdrop" onClick={() => setShowForm(false)}><div className="modal" onClick={e => e.stopPropagation()}><div className="modal-heading"><div><p className="eyebrow">NUEVA ACTIVIDAD</p><h2>Registrar entrenamiento</h2></div><button className="close" onClick={() => setShowForm(false)}>×</button></div><label>Nombre del entrenamiento<input value={newTitle} onChange={e => setNewTitle(e.target.value)} placeholder="Ej. Fuerza — Tren inferior" autoFocus /></label><label>Tipo<select value={newType} onChange={e => setNewType(e.target.value)}><option>Gimnasio</option><option>Running</option><option>Ciclismo</option><option>Personalizado</option></select></label><button className="primary-button full" onClick={addWorkout}>Guardar entrenamiento</button></div></div>}
+    {showForm && <WorkoutModal newTitle={newTitle} setNewTitle={setNewTitle} newType={newType} setNewType={setNewType} selectedExercises={selectedExercises} setSelectedExercises={setSelectedExercises} search={exerciseSearch} setSearch={setExerciseSearch} group={exerciseGroup} setGroup={setExerciseGroup} onSave={addWorkout} onClose={() => setShowForm(false)} />}
   </div>
 }
 
@@ -60,7 +83,18 @@ function Stat({ label, value, detail }: { label: string; value: string; detail: 
 function History({ workouts, onAdd }: { workouts: Workout[]; onAdd: () => void }) { return <section className="content-section history-page"><div className="section-heading"><div><p className="eyebrow">{workouts.length} ACTIVIDADES</p><h2>Tu recorrido</h2></div><button className="secondary-button" onClick={onAdd}>＋ Añadir sesión</button></div><WorkoutList workouts={workouts} /></section> }
 function WorkoutList({ workouts }: { workouts: Workout[] }) { return <div className="workout-list">{workouts.map(workout => <div className="workout-row" key={workout.id}><div className="workout-icon">{workout.type === 'Running' ? '⌁' : workout.type === 'Gimnasio' ? '↗' : '○'}</div><div className="workout-info"><strong>{workout.title}</strong><span>{workout.type} · {workout.date}</span></div><b>{workout.duration}</b><span className="row-arrow">→</span></div>)}</div> }
 function Planner({ goal, setGoal, plan, onGenerate }: { goal: string; setGoal: (v: string) => void; plan: string; onGenerate: () => void }) { return <section className="planner-card"><div className="planner-intro"><div className="ai-badge">✦</div><p className="eyebrow">ENTRENADOR INTELIGENTE</p><h2>¿Qué quieres<br /><em>conseguir?</em></h2><p>Cuéntame tu objetivo y crearé una guía que se adapte a ti.</p></div><div className="planner-form"><label>Mi objetivo es...<textarea value={goal} onChange={e => setGoal(e.target.value)} placeholder="Ej. Prepararme para una carrera de 10 km en 8 semanas" /></label><button className="primary-button full" onClick={onGenerate}>Generar mi plan <span>✦</span></button>{plan && <div className="plan-result"><strong>Tu plan empieza aquí</strong><p>{plan}</p></div>}</div></section> }
+function WorkoutModal({ newTitle, setNewTitle, newType, setNewType, selectedExercises, setSelectedExercises, search, setSearch, group, setGroup, onSave, onClose }: { newTitle: string; setNewTitle: (v: string) => void; newType: string; setNewType: (v: string) => void; selectedExercises: Exercise[]; setSelectedExercises: (v: Exercise[]) => void; search: string; setSearch: (v: string) => void; group: string; setGroup: (v: string) => void; onSave: () => void; onClose: () => void }) {
+  const groups = ['Todos', ...Array.from(new Set(exerciseCatalog.map(exercise => exercise.group)))]
+  const available = exerciseCatalog.filter(exercise => exercise.name.toLowerCase().includes(search.toLowerCase()) && (group === 'Todos' || exercise.group === group) && !selectedExercises.some(selected => selected.id === exercise.id))
+  const toggleExercise = (exercise: Exercise) => setSelectedExercises([...selectedExercises, { ...exercise }])
+  const updateExercise = (id: string, key: 'sets' | 'reps' | 'weight', value: number) => setSelectedExercises(selectedExercises.map(exercise => exercise.id === id ? { ...exercise, [key]: Math.max(0, value) } : exercise))
+  return <div className="modal-backdrop" onClick={onClose}><div className="modal workout-modal" onClick={event => event.stopPropagation()}><div className="modal-heading"><div><p className="eyebrow">NUEVA ACTIVIDAD</p><h2>Registrar entrenamiento</h2></div><button className="close" onClick={onClose}>×</button></div><label>Nombre del entrenamiento<input value={newTitle} onChange={event => setNewTitle(event.target.value)} placeholder="Ej. Fuerza — Tren inferior" autoFocus /></label><label>Tipo<select value={newType} onChange={event => setNewType(event.target.value)}><option>Gimnasio</option><option>Running</option><option>Ciclismo</option><option>Personalizado</option></select></label>{newType === 'Gimnasio' && <div className="exercise-picker"><div className="picker-heading"><strong>Ejercicios</strong><span>{selectedExercises.length} seleccionados</span></div><div className="exercise-filters"><input value={search} onChange={event => setSearch(event.target.value)} placeholder="Buscar ejercicio..." /><select value={group} onChange={event => setGroup(event.target.value)}>{groups.map(item => <option key={item}>{item}</option>)}</select></div><div className="exercise-results">{available.length ? available.map(exercise => <button className="exercise-option" key={exercise.id} onClick={() => toggleExercise(exercise)}><span><strong>{exercise.name}</strong><small>{exercise.group}</small></span><b>＋</b></button>) : <p className="empty-search">No hay ejercicios con esos filtros.</p>}</div>{selectedExercises.length > 0 && <div className="selected-exercises"><p className="eyebrow">SERIES Y CARGAS</p>{selectedExercises.map(exercise => <div className="selected-exercise" key={exercise.id}><div><strong>{exercise.name}</strong><small>{exercise.group}</small></div><label>Series<input type="number" min="1" value={exercise.sets} onChange={event => updateExercise(exercise.id, 'sets', Number(event.target.value))} /></label><label>Reps<input type="number" min="1" value={exercise.reps} onChange={event => updateExercise(exercise.id, 'reps', Number(event.target.value))} /></label><label>Kg<input type="number" min="0" step="0.5" value={exercise.weight} onChange={event => updateExercise(exercise.id, 'weight', Number(event.target.value))} /></label></div>)}</div>}</div>}<button className="primary-button full" onClick={onSave}>Guardar entrenamiento</button></div></div>
+}
 
 const root = document.getElementById('root')
 if (!root) throw new Error('No se encontró el contenedor de la aplicación')
-createRoot(root).render(<App />)
+const rootKey = '__aiFitnessPlannerRoot'
+const existingRoot = (window as Window & { [key: string]: unknown })[rootKey] as ReturnType<typeof createRoot> | undefined
+const appRoot = existingRoot ?? createRoot(root)
+;(window as Window & { [key: string]: unknown })[rootKey] = appRoot
+appRoot.render(<App />)
