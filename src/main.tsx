@@ -80,7 +80,7 @@ function App() {
     setGpxSummary(null)
     setTargetPace('')
     setRunningBlocks([{ id: Date.now(), repetitions: 4, distance: 400, pace: '4:45' }])
-    setSection('history')
+    setSection('summary')
   }
 
   const generatePlan = () => {
