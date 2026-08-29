@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import { blink } from './blink/client'
+// Supabase is the canonical persistence layer for users, workouts, and workout exercises.
 
 type Section = 'summary' | 'history' | 'planner' | 'exercises'
 type Workout = { id: number; title: string; type: string; date: string; duration: string; rpe: number; gpxSplits?: string[]; distance?: string; pace?: string; exercises?: Exercise[] }

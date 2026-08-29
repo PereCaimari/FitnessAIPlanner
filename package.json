@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@blinkdotnew/sdk": "^2.9.0",
+    "@supabase/supabase-js": "^2.112.4",
     "react": "latest",
     "react-dom": "latest"
   },
