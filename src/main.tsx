@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import { blink } from './blink/client'
+import { supabase } from './lib/supabase'
 // Supabase is the canonical persistence layer for users, workouts, and workout exercises.
 
 type Section = 'summary' | 'history' | 'planner' | 'exercises'
@@ -68,18 +69,21 @@ function App() {
   const [runningBlocks, setRunningBlocks] = useState<RunningBlock[]>([{ id: Date.now(), repetitions: 4, distance: 400, pace: '4:45' }])
   const [calendarMode, setCalendarMode] = useState<CalendarMode>('week')
   const [selectedWorkout, setSelectedWorkout] = useState<Workout | null>(null)
+  const [authMode, setAuthMode] = useState<'login' | 'signup'>('login')
+  const [authEmail, setAuthEmail] = useState('')
+  const [authPassword, setAuthPassword] = useState('')
+  const [authError, setAuthError] = useState('')
+  const [authBusy, setAuthBusy] = useState(false)
 
-  const workoutsTable = blink.db.table<WorkoutRow>('workouts')
-  const fromRow: (row: WorkoutRow) => Workout = (row) => ({ id: Number(row.id) || Date.now(), title: row.title, type: row.type, date: row.workoutDate, duration: row.duration, rpe: Number(row.rpe), distance: row.distance, pace: row.pace, exercises: row.exercisesJson ? JSON.parse(row.exercisesJson) as Exercise[] : undefined, gpxSplits: row.gpxSplitsJson ? JSON.parse(row.gpxSplitsJson) as string[] : undefined })
-  const loadWorkouts = async (userId: string) => { try { const rows = await workoutsTable.list({ where: { userId }, orderBy: { createdAt: 'desc' } }); setWorkouts(rows.map(fromRow)) } catch (error) { window.alert(error instanceof Error ? error.message : 'No se pudieron cargar los entrenamientos.') } finally { setWorkoutsLoading(false) } }
-  useEffect(() => { const unsubscribe = blink.auth.onAuthStateChanged(state => { if (state.user) { setCurrentUserId(state.user.id); void loadWorkouts(state.user.id) } else if (!state.isLoading) { setCurrentUserId(null); setWorkouts([]); setWorkoutsLoading(false) } if (!state.isLoading) setAuthLoading(false) }); return unsubscribe }, [])
+  const loadWorkouts = async (userId: string) => { const { data, error } = await supabase.from('workouts').select('*').eq('user_id', userId).order('created_at', { ascending: false }); if (error) window.alert(error.message); else setWorkouts((data ?? []).map(row => ({ id: Number(row.id) || Date.now(), title: row.title, type: row.type, date: row.workout_date, duration: `${row.duration_minutes ?? 0} min`, rpe: 5, distance: row.distance_km?.toString(), pace: row.average_pace_seconds?.toString() }))); setWorkoutsLoading(false) }
+  useEffect(() => { void supabase.auth.getSession().then(({ data }) => { const userId = data.session?.user.id ?? null; setCurrentUserId(userId); if (userId) void loadWorkouts(userId); else setWorkoutsLoading(false); setAuthLoading(false) }); const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => { const userId = session?.user.id ?? null; setCurrentUserId(userId); if (userId) void loadWorkouts(userId); else { setWorkouts([]); setWorkoutsLoading(false) } setAuthLoading(false) }); return () => listener.subscription.unsubscribe() }, [])
 
   const addWorkout = async () => {
     if (!newTitle.trim()) return
-    if (!currentUserId) { blink.auth.login(window.location.href); return }
+    if (!currentUserId) { window.alert('Inicia sesión para guardar tu entrenamiento.'); return }
     const details = newType === 'Gimnasio' && selectedExercises.length > 0 ? ` · ${selectedExercises.length} ejercicios` : ''
     const workout = { id: Date.now(), title: `${newTitle}${details}`, type: newType, date: newWorkoutDate, duration: newType === 'Running' && runningTime ? `${runningTime} min` : '—', rpe: Number(rpe), distance: newType === 'Running' ? runningDistance : undefined, pace: newType === 'Running' ? (realPace || averagePace.replace(' min/km', '')) : undefined, exercises: newType === 'Gimnasio' ? selectedExercises : undefined, gpxSplits: gpxSummary?.splits }
-    try { await workoutsTable.create({ id: String(workout.id), title: workout.title, type: workout.type, workoutDate: workout.date, duration: workout.duration, rpe: workout.rpe, distance: workout.distance, pace: workout.pace, exercisesJson: workout.exercises ? JSON.stringify(workout.exercises) : undefined, gpxSplitsJson: workout.gpxSplits ? JSON.stringify(workout.gpxSplits) : undefined, createdAt: new Date().toISOString(), userId: currentUserId }); setWorkouts(current => [workout, ...current]) } catch (error) { window.alert(error instanceof Error ? error.message : 'No se pudo guardar el entrenamiento.'); return }
+    try { const { error } = await supabase.from('workouts').insert({ user_id: currentUserId, title: workout.title, type: workout.type, workout_date: workout.date, duration_minutes: Number.parseInt(workout.duration) || 0, distance_km: workout.distance ? Number(workout.distance) : null, notes: workout.pace ?? null }); if (error) { window.alert(error.message); return } setWorkouts(current => [workout, ...current]) } catch (error) { window.alert(error instanceof Error ? error.message : 'No se pudo guardar el entrenamiento.'); return }
     setNewTitle('')
     setNewWorkoutDate(new Date().toISOString().slice(0, 10))
     setRpe('5')
@@ -99,17 +103,22 @@ function App() {
   }
 
   const updateWorkout = async (updated: Workout) => {
-    try { await workoutsTable.update(String(updated.id), { title: updated.title, type: updated.type, workoutDate: updated.date, duration: updated.duration, rpe: updated.rpe, distance: updated.distance, pace: updated.pace, exercisesJson: updated.exercises ? JSON.stringify(updated.exercises) : undefined, gpxSplitsJson: updated.gpxSplits ? JSON.stringify(updated.gpxSplits) : undefined }); setWorkouts(current => current.map(workout => workout.id === updated.id ? updated : workout)); setSelectedWorkout(updated) } catch (error) { window.alert(error instanceof Error ? error.message : 'No se pudo actualizar el entrenamiento.') }
+    try { await supabase.from('workouts').update({ title: updated.title, type: updated.type, workout_date: updated.date, duration_minutes: Number.parseInt(updated.duration) || 0, distance_km: updated.distance ? Number(updated.distance) : null, average_pace_seconds: updated.pace ?? null }).eq('id', String(updated.id)); setWorkouts(current => current.map(workout => workout.id === updated.id ? updated : workout)); setSelectedWorkout(updated) } catch (error) { window.alert(error instanceof Error ? error.message : 'No se pudo actualizar el entrenamiento.') }
   }
 
   const deleteWorkout = async (id: number) => {
-    try { await workoutsTable.delete(String(id)); setWorkouts(current => current.filter(workout => workout.id !== id)); setSelectedWorkout(null) } catch (error) { window.alert(error instanceof Error ? error.message : 'No se pudo eliminar el entrenamiento.') }
+    try { await supabase.from('workouts').delete().eq('id', String(id)); setWorkouts(current => current.filter(workout => workout.id !== id)); setSelectedWorkout(null) } catch (error) { window.alert(error instanceof Error ? error.message : 'No se pudo eliminar el entrenamiento.') }
   }
 
   const generatePlan = () => {
     if (!goal.trim()) return
     setPlan(`Tu plan personalizado para ${goal}: 3 sesiones semanales, empezando con 10 minutos de calentamiento, trabajo principal progresivo y 5 minutos de vuelta a la calma. Descansa al menos un día entre sesiones y aumenta la carga gradualmente.`)
   }
+
+  const handleAuth = async () => { setAuthBusy(true); setAuthError(''); const result = authMode === 'login' ? await supabase.auth.signInWithPassword({ email: authEmail, password: authPassword }) : await supabase.auth.signUp({ email: authEmail, password: authPassword }); if (result.error) setAuthError(result.error.message); setAuthBusy(false) }
+
+  if (authLoading) return <div className="loading-state">Conectando con Supabase…</div>
+  if (!currentUserId) return <AuthScreen mode={authMode} setMode={setAuthMode} email={authEmail} setEmail={setAuthEmail} password={authPassword} setPassword={setAuthPassword} error={authError} busy={authBusy} onSubmit={() => void handleAuth()} />
 
   return <div className="app-shell">
     <aside className="sidebar">
@@ -233,6 +242,9 @@ function ExerciseLibrary({ catalog, groups, onAddGroup, onAddExercise }: { catal
   const createExercise = () => { if (name.trim()) { onAddExercise({ name: name.trim(), group: exerciseGroup, sets: 3, reps: 10, weight: 0 }); setName('') } }
   return <section className="content-section library-page"><div className="section-heading"><div><p className="eyebrow">BIBLIOTECA PERSONAL</p><h2>Ejercicios y grupos musculares</h2></div></div><div className="library-tabs"><button className={tab === 'exercises' ? 'library-tab active' : 'library-tab'} onClick={() => setTab('exercises')}>Ejercicios <span>{catalog.length}</span></button><button className={tab === 'groups' ? 'library-tab active' : 'library-tab'} onClick={() => setTab('groups')}>Grupos musculares <span>{groups.length}</span></button></div>{tab === 'exercises' ? <><div className="library-toolbar"><input value={search} onChange={event => setSearch(event.target.value)} placeholder="Buscar ejercicio..." /><select value={group} onChange={event => setGroup(event.target.value)}><option>Todos</option>{groups.map(item => <option key={item}>{item}</option>)}</select></div><div className="library-grid">{filtered.map(exercise => <div className="library-card" key={exercise.id}><div className="workout-icon">↗</div><div><strong>{exercise.name}</strong><span>{exercise.group}</span></div><MuscleVisual group={exercise.group} /></div>)}</div><div className="create-panel"><p className="eyebrow">AÑADIR EJERCICIO</p><div className="create-row"><input value={name} onChange={event => setName(event.target.value)} placeholder="Nombre del ejercicio" /><select value={exerciseGroup} onChange={event => setExerciseGroup(event.target.value)}>{groups.map(item => <option key={item}>{item}</option>)}</select><button className="primary-button" onClick={createExercise}>Crear ejercicio</button></div></div></> : <><div className="group-grid">{groups.map(item => <div className="group-card" key={item}><strong>{item}</strong><span>{catalog.filter(exercise => exercise.group === item).length} ejercicios</span></div>)}</div><div className="create-panel"><p className="eyebrow">CREAR GRUPO MUSCULAR</p><div className="create-row"><input value={newGroup} onChange={event => setNewGroup(event.target.value)} placeholder="Ej. Glúteos" /><button className="primary-button" onClick={createGroup}>Crear grupo</button></div></div></>}</section>
 }
+
+function AuthScreen({ mode, setMode, email, setEmail, password, setPassword, error, busy, onSubmit }: { mode: 'login' | 'signup'; setMode: (mode: 'login' | 'signup') => void; email: string; setEmail: (value: string) => void; password: string; setPassword: (value: string) => void; error: string; busy: boolean; onSubmit: () => void }) {
+  return <main className="auth-screen"><div className="auth-card"><div className="brand-mark">AI</div><p className="eyebrow">FITNESS PLANNER</p><h1>{mode === 'login' ? 'Bienvenido de nuevo' : 'Crea tu cuenta'}</h1><p>Guarda tus entrenamientos de forma segura en Supabase.</p><label>Email<input type="email" value={email} onChange={event => setEmail(event.target.value)} autoComplete="email" /></label><label>Contraseña<input type="password" value={password} onChange={event => setPassword(event.target.value)} autoComplete={mode === 'login' ? 'current-password' : 'new-password'} /></label>{error && <p className="auth-error">{error}</p>}<button className="primary-button full" onClick={onSubmit} disabled={busy || !email || !password}>{busy ? 'Procesando…' : mode === 'login' ? 'Iniciar sesión' : 'Registrarme'}</button><button className="text-button" onClick={() => setMode(mode === 'login' ? 'signup' : 'login')}>{mode === 'login' ? '¿No tienes cuenta? Regístrate' : '¿Ya tienes cuenta? Inicia sesión'}</button></div></main>}
 
 const root = document.getElementById('root')
 if (!root) throw new Error('No se encontró el contenedor de la aplicación')
