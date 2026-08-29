@@ -83,7 +83,14 @@ function App() {
     if (!currentUserId) { window.alert('Inicia sesión para guardar tu entrenamiento.'); return }
     const details = newType === 'Gimnasio' && selectedExercises.length > 0 ? ` · ${selectedExercises.length} ejercicios` : ''
     const workout = { id: crypto.randomUUID(), title: `${newTitle}${details}`, type: newType, date: newWorkoutDate, duration: newType === 'Running' && runningTime ? `${runningTime} min` : '—', rpe: Number(rpe), distance: newType === 'Running' ? runningDistance : undefined, pace: newType === 'Running' ? (realPace || averagePace.replace(' min/km', '')) : undefined, exercises: newType === 'Gimnasio' ? selectedExercises : undefined, gpxSplits: gpxSummary?.splits }
-    try { const { error } = await supabase.from('workouts').insert({ user_id: currentUserId, title: workout.title, type: workout.type, workout_date: workout.date, duration_minutes: Number.parseInt(workout.duration) || 0, distance_km: workout.distance ? Number(workout.distance) : null, notes: workout.pace ?? null }); if (error) { window.alert(error.message); return } setWorkouts(current => [workout, ...current]) } catch (error) { window.alert(error instanceof Error ? error.message : 'No se pudo guardar el entrenamiento.'); return }
+    try {
+      const paceText = workout.pace?.trim() ?? ''
+      const paceParts = paceText.split(':').map(Number)
+      const paceSeconds = paceParts.length === 2 && paceParts.every(Number.isFinite) ? Math.round(paceParts[0] * 60 + paceParts[1]) : null
+      const { error } = await supabase.from('workouts').insert({ user_id: currentUserId, title: workout.title, type: workout.type, workout_date: workout.date, duration_minutes: Math.max(0, Math.round(Number.parseFloat(workout.duration) || 0)), distance_km: workout.distance && Number.isFinite(Number(workout.distance)) ? Number(workout.distance) : null, average_pace_seconds: paceSeconds, intensity: `RPE ${workout.rpe}`, notes: workout.gpxSplits?.length ? 'Datos importados desde GPX' : null, gpx_splits: workout.gpxSplits ?? null, elevation_gain_m: gpxSummary?.elevationGain ?? null, elevation_loss_m: gpxSummary?.elevationLoss ?? null, start_time: gpxSummary?.startTime ?? null, end_time: gpxSummary?.endTime ?? null })
+      if (error) { window.alert(`No se pudo guardar el entrenamiento: ${error.message}`); return }
+      setWorkouts(current => [workout, ...current])
+    } catch (error) { window.alert(error instanceof Error ? error.message : 'No se pudo guardar el entrenamiento.'); return }
     setNewTitle('')
     setNewWorkoutDate(new Date().toISOString().slice(0, 10))
     setRpe('5')
