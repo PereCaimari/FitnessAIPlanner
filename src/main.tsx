@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
-import { blink } from '@/blink/client'
+import { blink } from './blink/client'
 
 type Section = 'summary' | 'history' | 'planner' | 'exercises'
 type Workout = { id: number; title: string; type: string; date: string; duration: string; rpe: number; gpxSplits?: string[]; distance?: string; pace?: string; exercises?: Exercise[] }
