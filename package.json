@@ -1,1 +1,23 @@
-{"name":"ai-fitness-planner","private":true,"version":"1.0.0","type":"module","scripts":{"dev":"vite","build":"vite build","lint":"eslint ."},"dependencies":{"react":"latest","react-dom":"latest"},"devDependencies":{"@tailwindcss/vite":"latest","@vitejs/plugin-react":"latest","tailwindcss":"latest","typescript":"latest","vite":"latest"}}
+{
+  "name": "ai-fitness-planner",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@blinkdotnew/sdk": "^2.9.0",
+    "react": "latest",
+    "react-dom": "latest"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "latest",
+    "@vitejs/plugin-react": "latest",
+    "tailwindcss": "latest",
+    "typescript": "latest",
+    "vite": "latest"
+  }
+}

@@ -1,9 +1,11 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
+import { blink } from '@/blink/client'
 
 type Section = 'summary' | 'history' | 'planner' | 'exercises'
 type Workout = { id: number; title: string; type: string; date: string; duration: string; rpe: number; gpxSplits?: string[]; distance?: string; pace?: string; exercises?: Exercise[] }
+type WorkoutRow = { id: string; title: string; type: string; workoutDate: string; duration: string; rpe: number; distance?: string; pace?: string; exercisesJson?: string; gpxSplitsJson?: string; createdAt: string }
 type Exercise = { id: string; name: string; group: string; sets: number; reps: number; weight: number }
 type RunningBlock = { id: number; repetitions: number; distance: number; pace: string }
 type GpxSummary = { elevationGain: number; elevationLoss: number; startTime: string; endTime: string; splits: string[] }
@@ -39,7 +41,8 @@ const navItems: { id: Section; label: string; icon: string }[] = [
 
 function App() {
   const [section, setSection] = useState<Section>('summary')
-  const [workouts, setWorkouts] = useState(initialWorkouts)
+  const [workouts, setWorkouts] = useState<Workout[]>(initialWorkouts)
+  const [workoutsLoading, setWorkoutsLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [newTitle, setNewTitle] = useState('')
   const [newType, setNewType] = useState('Gimnasio')
@@ -63,10 +66,16 @@ function App() {
   const [calendarMode, setCalendarMode] = useState<CalendarMode>('week')
   const [selectedWorkout, setSelectedWorkout] = useState<Workout | null>(null)
 
-  const addWorkout = () => {
+  const workoutsTable = blink.db.table<WorkoutRow>('workouts')
+  const fromRow = (row: WorkoutRow): Workout => ({ id: Number(row.id) || Date.now(), title: row.title, type: row.type, date: row.workoutDate, duration: row.duration, rpe: Number(row.rpe), distance: row.distance, pace: row.pace, exercises: row.exercisesJson ? JSON.parse(row.exercisesJson) as Exercise[] : undefined, gpxSplits: row.gpxSplitsJson ? JSON.parse(row.gpxSplitsJson) as string[] : undefined })
+  const loadWorkouts = async () => { try { const rows = await workoutsTable.list({ orderBy: { createdAt: 'desc' } }); setWorkouts(rows.map(fromRow)) } catch (error) { window.alert(error instanceof Error ? error.message : 'No se pudieron cargar los entrenamientos.') } finally { setWorkoutsLoading(false) } }
+  useEffect(() => { void loadWorkouts() }, [])
+
+  const addWorkout = async () => {
     if (!newTitle.trim()) return
     const details = newType === 'Gimnasio' && selectedExercises.length > 0 ? ` · ${selectedExercises.length} ejercicios` : ''
-    setWorkouts([{ id: Date.now(), title: `${newTitle}${details}`, type: newType, date: newWorkoutDate, duration: newType === 'Running' && runningTime ? `${runningTime} min` : '—', rpe: Number(rpe), distance: newType === 'Running' ? runningDistance : undefined, pace: newType === 'Running' ? (realPace || averagePace.replace(' min/km', '')) : undefined, exercises: newType === 'Gimnasio' ? selectedExercises : undefined, gpxSplits: gpxSummary?.splits }, ...workouts])
+    const workout = { id: Date.now(), title: `${newTitle}${details}`, type: newType, date: newWorkoutDate, duration: newType === 'Running' && runningTime ? `${runningTime} min` : '—', rpe: Number(rpe), distance: newType === 'Running' ? runningDistance : undefined, pace: newType === 'Running' ? (realPace || averagePace.replace(' min/km', '')) : undefined, exercises: newType === 'Gimnasio' ? selectedExercises : undefined, gpxSplits: gpxSummary?.splits }
+    try { await workoutsTable.create({ id: String(workout.id), title: workout.title, type: workout.type, workoutDate: workout.date, duration: workout.duration, rpe: workout.rpe, distance: workout.distance, pace: workout.pace, exercisesJson: workout.exercises ? JSON.stringify(workout.exercises) : undefined, gpxSplitsJson: workout.gpxSplits ? JSON.stringify(workout.gpxSplits) : undefined, createdAt: new Date().toISOString() }); setWorkouts(current => [workout, ...current]) } catch (error) { window.alert(error instanceof Error ? error.message : 'No se pudo guardar el entrenamiento.'); return }
     setNewTitle('')
     setNewWorkoutDate(new Date().toISOString().slice(0, 10))
     setRpe('5')
@@ -88,11 +97,13 @@ function App() {
   const updateWorkout = (updated: Workout) => {
     setWorkouts(current => current.map(workout => workout.id === updated.id ? updated : workout))
     setSelectedWorkout(updated)
+    void workoutsTable.update(String(updated.id), { title: updated.title, type: updated.type, workoutDate: updated.date, duration: updated.duration, rpe: updated.rpe, distance: updated.distance, pace: updated.pace, exercisesJson: updated.exercises ? JSON.stringify(updated.exercises) : undefined }).catch(error => window.alert(error instanceof Error ? error.message : 'No se pudo actualizar el entrenamiento.'))
   }
 
   const deleteWorkout = (id: number) => {
     setWorkouts(current => current.filter(workout => workout.id !== id))
     setSelectedWorkout(null)
+    void workoutsTable.delete(String(id)).catch(error => window.alert(error instanceof Error ? error.message : 'No se pudo eliminar el entrenamiento.'))
   }
 
   const generatePlan = () => {
@@ -108,7 +119,7 @@ function App() {
     </aside>
     <main className="main-content">
       <header className="topbar"><div><p className="eyebrow">{section === 'summary' ? 'BUENOS DÍAS, PERE' : section === 'history' ? 'TU ACTIVIDAD' : section === 'planner' ? 'ASISTENTE PERSONAL' : 'BIBLIOTECA'}</p><h1>{section === 'summary' ? 'Tu resumen' : section === 'history' ? 'Historial de entrenamientos' : section === 'planner' ? 'Planificador IA' : 'Ejercicios y grupos'}</h1></div>{section === 'summary' && <button className="primary-button" onClick={() => setShowForm(true)}>＋ Registrar entrenamiento</button>}</header>
-      {section === 'summary' && <Summary workouts={workouts} onHistory={() => setSection('history')} onSelectWorkout={setSelectedWorkout} calendarMode={calendarMode} setCalendarMode={setCalendarMode} />}
+      {workoutsLoading ? <div className="loading-state">Cargando tus entrenamientos…</div> : section === 'summary' && <Summary workouts={workouts} onHistory={() => setSection('history')} onSelectWorkout={setSelectedWorkout} calendarMode={calendarMode} setCalendarMode={setCalendarMode} />}
       {section === 'history' && <History workouts={workouts} onAdd={() => setShowForm(true)} onSelect={setSelectedWorkout} />}
       {section === 'planner' && <Planner goal={goal} setGoal={setGoal} plan={plan} onGenerate={generatePlan} />}
       {section === 'exercises' && <ExerciseLibrary catalog={catalog} groups={muscleGroups} onAddGroup={group => setMuscleGroups([...muscleGroups, group])} onAddExercise={exercise => setCatalog([...catalog, { ...exercise, id: `custom-${Date.now()}` }])} />}
