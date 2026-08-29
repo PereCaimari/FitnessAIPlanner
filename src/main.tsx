@@ -5,7 +5,7 @@ import { blink } from './blink/client'
 
 type Section = 'summary' | 'history' | 'planner' | 'exercises'
 type Workout = { id: number; title: string; type: string; date: string; duration: string; rpe: number; gpxSplits?: string[]; distance?: string; pace?: string; exercises?: Exercise[] }
-type WorkoutRow = { id: string; title: string; type: string; workoutDate: string; duration: string; rpe: number; distance?: string; pace?: string; exercisesJson?: string; gpxSplitsJson?: string; createdAt: string }
+type WorkoutRow = { id: string; title: string; type: string; workoutDate: string; duration: string; rpe: number; distance?: string; pace?: string; exercisesJson?: string; gpxSplitsJson?: string; createdAt: string; userId?: string }
 type Exercise = { id: string; name: string; group: string; sets: number; reps: number; weight: number }
 type RunningBlock = { id: number; repetitions: number; distance: number; pace: string }
 type GpxSummary = { elevationGain: number; elevationLoss: number; startTime: string; endTime: string; splits: string[] }
@@ -96,16 +96,12 @@ function App() {
     setSection('summary')
   }
 
-  const updateWorkout = (updated: Workout) => {
-    setWorkouts(current => current.map(workout => workout.id === updated.id ? updated : workout))
-    setSelectedWorkout(updated)
-    void workoutsTable.update(String(updated.id), { title: updated.title, type: updated.type, workoutDate: updated.date, duration: updated.duration, rpe: updated.rpe, distance: updated.distance, pace: updated.pace, exercisesJson: updated.exercises ? JSON.stringify(updated.exercises) : undefined }).catch(error => window.alert(error instanceof Error ? error.message : 'No se pudo actualizar el entrenamiento.'))
+  const updateWorkout = async (updated: Workout) => {
+    try { await workoutsTable.update(String(updated.id), { title: updated.title, type: updated.type, workoutDate: updated.date, duration: updated.duration, rpe: updated.rpe, distance: updated.distance, pace: updated.pace, exercisesJson: updated.exercises ? JSON.stringify(updated.exercises) : undefined, gpxSplitsJson: updated.gpxSplits ? JSON.stringify(updated.gpxSplits) : undefined }); setWorkouts(current => current.map(workout => workout.id === updated.id ? updated : workout)); setSelectedWorkout(updated) } catch (error) { window.alert(error instanceof Error ? error.message : 'No se pudo actualizar el entrenamiento.') }
   }
 
-  const deleteWorkout = (id: number) => {
-    setWorkouts(current => current.filter(workout => workout.id !== id))
-    setSelectedWorkout(null)
-    void workoutsTable.delete(String(id)).catch(error => window.alert(error instanceof Error ? error.message : 'No se pudo eliminar el entrenamiento.'))
+  const deleteWorkout = async (id: number) => {
+    try { await workoutsTable.delete(String(id)); setWorkouts(current => current.filter(workout => workout.id !== id)); setSelectedWorkout(null) } catch (error) { window.alert(error instanceof Error ? error.message : 'No se pudo eliminar el entrenamiento.') }
   }
 
   const generatePlan = () => {
