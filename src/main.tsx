@@ -10,7 +10,7 @@ type Workout = { id: string; title: string; type: string; date: string; duration
 type WorkoutRow = { id: string; title: string; type: string; workoutDate: string; duration: string; rpe: number; distance?: string; pace?: string; exercisesJson?: string; gpxSplitsJson?: string; createdAt: string; userId: string }
 type Exercise = { id: string; name: string; group: string; sets: number; reps: number; weight: number }
 type RunningBlock = { id: number; repetitions: number; distance: number; pace: string }
-type GpxSummary = { elevationGain: number; elevationLoss: number; startTime: string; endTime: string; splits: string[] }
+type GpxSummary = { distanceKm: number; durationMinutes: number; realPace: string; elevationGain: number; elevationLoss: number; startTime: string; endTime: string; splits: string[] }
 type CalendarMode = 'week' | 'month'
 
 const initialWorkouts: Workout[] = [
@@ -81,7 +81,9 @@ function parseGpxFile(file: File): Promise<GpxSummary> {
     })
     const elevationGain = elevations.slice(1).reduce((total, elevation, index) => total + Math.max(0, elevation - elevations[index]), 0)
     const elevationLoss = elevations.slice(1).reduce((total, elevation, index) => total + Math.max(0, elevations[index] - elevation), 0)
-    return { elevationGain: Math.round(elevationGain), elevationLoss: Math.round(elevationLoss), startTime: timestamps.length ? new Date(Math.min(...timestamps)).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—', endTime: timestamps.length ? new Date(Math.max(...timestamps)).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—', splits: splitTimes }
+    const durationMinutes = timestamps.length >= 2 ? (Math.max(...timestamps) - Math.min(...timestamps)) / 60000 : 0
+    const realPace = distanceKm > 0 && durationMinutes > 0 ? `${Math.floor(durationMinutes / distanceKm)}:${String(Math.round((durationMinutes / distanceKm % 1) * 60) % 60).padStart(2, '0')}` : ''
+    return { distanceKm, durationMinutes, realPace, elevationGain: Math.round(elevationGain), elevationLoss: Math.round(elevationLoss), startTime: timestamps.length ? new Date(Math.min(...timestamps)).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—', endTime: timestamps.length ? new Date(Math.max(...timestamps)).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—', splits: splitTimes }
   })
 }
 
@@ -226,7 +228,9 @@ function WorkoutDetail({ workout, onClose, onSave, onDelete }: { workout: Workou
     if (!file) return
     setGpxBusy(true)
     void parseGpxFile(file).then(summary => {
-      setDistance(summary.splits.length ? String(summary.splits.length) : distance)
+      setDistance(summary.distanceKm.toFixed(2))
+      setDuration(summary.durationMinutes.toFixed(1))
+      setPace(summary.realPace)
       setGpxSplits(summary.splits)
       setGpxFileName(file.name)
     }).catch(error => window.alert(error instanceof Error ? error.message : 'No se pudo leer el archivo GPX.')).finally(() => setGpxBusy(false))
@@ -284,8 +288,10 @@ function WorkoutModal({ catalog, groups, newTitle, setNewTitle, newType, setNewT
     const timestamps = points.map(point => point.time).filter(Number.isFinite)
     const startTime = timestamps.length ? new Date(Math.min(...timestamps)).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—'
     const endTime = timestamps.length ? new Date(Math.max(...timestamps)).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—'
-    if (timestamps.length >= 2) { const minutes = (Math.max(...timestamps) - Math.min(...timestamps)) / 60000; setRunningTime(minutes.toFixed(1)); setRealPace('') }
-    setGpxSummary({ elevationGain: Math.round(elevationGain), elevationLoss: Math.round(elevationLoss), startTime, endTime, splits: splitTimes })
+    const durationMinutes = timestamps.length >= 2 ? (Math.max(...timestamps) - Math.min(...timestamps)) / 60000 : 0
+    const realPace = distanceKm > 0 && durationMinutes > 0 ? `${Math.floor(durationMinutes / distanceKm)}:${String(Math.round((durationMinutes / distanceKm % 1) * 60) % 60).padStart(2, '0')}` : ''
+    if (timestamps.length >= 2) { setRunningTime(durationMinutes.toFixed(1)); setRealPace(realPace) }
+    setGpxSummary({ distanceKm, durationMinutes, realPace, elevationGain: Math.round(elevationGain), elevationLoss: Math.round(elevationLoss), startTime, endTime, splits: splitTimes })
     setGpxFileName(file.name)
   }
   const handleGpx = (event: React.ChangeEvent<HTMLInputElement>) => { const file = event.target.files?.[0]; if (file) void parseGpx(file).catch(error => window.alert(error instanceof Error ? error.message : 'No se pudo leer el archivo GPX.')) }
