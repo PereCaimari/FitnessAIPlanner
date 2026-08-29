@@ -44,6 +44,8 @@ function App() {
   const [workouts, setWorkouts] = useState<Workout[]>(initialWorkouts)
   const [workoutsLoading, setWorkoutsLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+  const [authLoading, setAuthLoading] = useState(true)
   const [newTitle, setNewTitle] = useState('')
   const [newType, setNewType] = useState('Gimnasio')
   const [newWorkoutDate, setNewWorkoutDate] = useState(() => new Date().toISOString().slice(0, 10))
