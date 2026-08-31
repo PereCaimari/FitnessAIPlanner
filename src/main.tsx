@@ -171,12 +171,23 @@ function App() {
     try {
       const { error } = await supabase.from('workouts').update({ title: updated.title, type: updated.type, workout_date: updated.date, rpe: updated.rpe }).eq('id', updated.id)
       if (error) { window.alert(`No se pudo actualizar el entrenamiento: ${error.message}`); return }
-      const { error: exerciseDeleteError } = await supabase.from('gym_logs').delete().eq('workout_id', updated.id)
-      if (exerciseDeleteError) { window.alert(`No se pudieron actualizar los ejercicios: ${exerciseDeleteError.message}`); return }
-      if (updated.exercises?.length) {
-        const gymRows = updated.exercises.flatMap(exercise => Array.from({ length: Math.max(1, exercise.sets) }, (_, index) => ({ workout_id: updated.id, exercise_name: exercise.name, set_order: index + 1, reps: exercise.reps, weight_kg: exercise.weight })))
-        const { error: exerciseInsertError } = await supabase.from('gym_logs').insert(gymRows)
-        if (exerciseInsertError) { window.alert(`No se pudieron guardar los ejercicios: ${exerciseInsertError.message}`); return }
+      if (updated.type === 'Gimnasio') {
+        const { error: exerciseDeleteError } = await supabase.from('gym_logs').delete().eq('workout_id', updated.id)
+        if (exerciseDeleteError) { window.alert(`No se pudieron actualizar los ejercicios: ${exerciseDeleteError.message}`); return }
+        if (updated.exercises?.length) {
+          const gymRows = updated.exercises.flatMap(exercise => Array.from({ length: Math.max(1, exercise.sets) }, (_, index) => ({ workout_id: updated.id, exercise_name: exercise.name, set_order: index + 1, reps: exercise.reps, weight_kg: exercise.weight })))
+          const { error: exerciseInsertError } = await supabase.from('gym_logs').insert(gymRows)
+          if (exerciseInsertError) { window.alert(`No se pudieron guardar los ejercicios: ${exerciseInsertError.message}`); return }
+        }
+      }
+      if (updated.type === 'Running') {
+        const { error: runningDeleteError } = await supabase.from('running_logs').delete().eq('workout_id', updated.id)
+        if (runningDeleteError) { window.alert(`No se pudieron actualizar los datos de running: ${runningDeleteError.message}`); return }
+        const runningRows = updated.gpxSplits?.length
+          ? updated.gpxSplits.map((split, index) => ({ workout_id: updated.id, block_order: index + 1, block_type: 'gpx_split', distance_meters: null, duration_seconds: null, avg_pace: split, avg_hr: null, elevation_gain_meters: null }))
+          : [{ workout_id: updated.id, block_order: 1, block_type: 'rodaje', distance_meters: updated.distance ? Number(updated.distance) * 1000 : null, duration_seconds: updated.duration ? Math.round(Number.parseFloat(updated.duration) * 60) : null, avg_pace: updated.pace || null, avg_hr: null, elevation_gain_meters: null }]
+        const { error: runningInsertError } = await supabase.from('running_logs').insert(runningRows)
+        if (runningInsertError) { window.alert(`No se pudieron guardar los datos de running: ${runningInsertError.message}`); return }
       }
       setWorkouts(current => current.map(workout => workout.id === updated.id ? updated : workout))
       setSelectedWorkout(updated)
@@ -195,6 +206,14 @@ function App() {
   const handleAuth = async () => { setAuthBusy(true); setAuthError(''); const result = authMode === 'login' ? await supabase.auth.signInWithPassword({ email: authEmail, password: authPassword }) : await supabase.auth.signUp({ email: authEmail, password: authPassword }); if (result.error) setAuthError(result.error.message); setAuthBusy(false) }
 
   const selectWorkout = async (workout: Workout) => {
+    if (workout.type === 'Running') {
+      const { data, error } = await supabase.from('running_logs').select('*').eq('workout_id', workout.id).order('block_order', { ascending: true })
+      if (error) { window.alert(`No se pudieron cargar los datos de running: ${error.message}`); setSelectedWorkout(workout); return }
+      const logs = data ?? []
+      const firstLog = logs[0]
+      setSelectedWorkout({ ...workout, distance: firstLog?.distance_meters != null ? (Number(firstLog.distance_meters) / 1000).toString() : undefined, pace: firstLog?.avg_pace || undefined, duration: firstLog?.duration_seconds != null ? `${Math.round(Number(firstLog.duration_seconds) / 60)} min` : workout.duration, gpxSplits: logs.filter(row => row.block_type === 'gpx_split').map(row => String(row.avg_pace ?? '')).filter(Boolean) })
+      return
+    }
     if (workout.type !== 'Gimnasio') { setSelectedWorkout(workout); return }
     const { data, error } = await supabase.from('gym_logs').select('*').eq('workout_id', workout.id).order('created_at', { ascending: true })
     if (error) { window.alert(`No se pudieron cargar los ejercicios: ${error.message}`); setSelectedWorkout(workout); return }
