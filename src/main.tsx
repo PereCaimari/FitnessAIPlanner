@@ -130,7 +130,7 @@ function App() {
     const details = newType === 'Gimnasio' && selectedExercises.length > 0 ? ` · ${selectedExercises.length} ejercicios` : ''
     const workout = { id: crypto.randomUUID(), title: `${newTitle}${details}`, type: newType, date: newWorkoutDate, duration: newType === 'Running' && runningTime ? `${runningTime} min` : '—', rpe: Number(rpe), distance: newType === 'Running' ? runningDistance : undefined, pace: newType === 'Running' ? (realPace || averagePace.replace(' min/km', '')) : undefined, exercises: newType === 'Gimnasio' ? selectedExercises : undefined, gpxSplits: gpxSummary?.splits }
     try {
-      const { error } = await supabase.from('workouts').insert({ id: workout.id, user_id: currentUserId, title: workout.title, type: workout.type, sport: newType === 'Gimnasio' ? 'gym' : newType === 'Running' ? 'running' : newType === 'Natación' ? 'swimming' : 'custom', workout_date: workout.date, rpe: workout.rpe })
+      const { error } = await supabase.from('workouts').insert({ id: workout.id, user_id: currentUserId, title: workout.title, type: workout.type, workout_date: workout.date, rpe: workout.rpe, comment: null })
       if (error) { window.alert(`No se pudo guardar el entrenamiento: ${error.message}`); return }
       if (newType === 'Running') {
         const paceToText = workout.pace?.trim() || null
@@ -169,7 +169,7 @@ function App() {
 
   const updateWorkout = async (updated: Workout) => {
     try {
-      const { error } = await supabase.from('workouts').update({ title: updated.title, type: updated.type, workout_date: updated.date, rpe: updated.rpe }).eq('id', updated.id)
+      const { error } = await supabase.from('workouts').update({ title: updated.title, type: updated.type, workout_date: updated.date, rpe: updated.rpe, comment: null }).eq('id', updated.id)
       if (error) { window.alert(`No se pudo actualizar el entrenamiento: ${error.message}`); return }
       const { error: exerciseDeleteError } = await supabase.from('gym_logs').delete().eq('workout_id', updated.id)
       if (exerciseDeleteError) { window.alert(`No se pudieron actualizar los ejercicios: ${exerciseDeleteError.message}`); return }
