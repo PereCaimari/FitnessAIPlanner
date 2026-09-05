@@ -9,6 +9,7 @@ type Section = 'summary' | 'history' | 'planner' | 'exercises'
 type Workout = { id: string; title: string; type: string; date: string; duration: string; rpe: number; gpxSplits?: string[]; distance?: string; pace?: string; exercises?: Exercise[] }
 type WorkoutRow = { id: string; title: string; type: string; workout_date: string; duration_minutes: number | null; distance_km: number | null; average_pace_seconds: number | null; rpe: number | null; intensity: string | null; notes: string | null; gpx_splits: string[] | string | null; elevation_gain_m: number | null; elevation_loss_m: number | null; start_time: string | null; end_time: string | null; created_at: string; userId: string }
 type Exercise = { id: string; name: string; group: string; sets: number; reps: number; weight: number }
+type ExerciseRow = { id: string; name: string; muscle_group_id: string; muscle_groups?: { name: string } | null }
 type RunningBlock = { id: number; repetitions: number; distance: number; pace: string }
 type GpxSummary = { distanceKm: number; durationMinutes: number; realPace: string; elevationGain: number; elevationLoss: number; startTime: string; endTime: string; splits: string[] }
 type CalendarMode = 'week' | 'month'
@@ -124,6 +125,14 @@ function App() {
   const loadWorkouts = async (userId: string) => { const { data, error } = await supabase.from('workouts').select('*').eq('user_id', userId).order('created_at', { ascending: false }); if (error) window.alert(error.message); else setWorkouts((data ?? []).map(row => ({ id: row.id, title: row.title, type: row.type, date: row.workout_date, duration: `${row.duration_minutes ?? 0} min`, rpe: Number(row.rpe ?? String(row.intensity ?? '').replace(/\D/g, '')) || 5, distance: row.distance_km?.toString(), pace: typeof row.average_pace_seconds === 'number' ? `${Math.floor(row.average_pace_seconds / 60)}:${String(row.average_pace_seconds % 60).padStart(2, '0')}` : undefined, gpxSplits: Array.isArray(row.gpx_splits) ? row.gpx_splits : typeof row.gpx_splits === 'string' ? (() => { try { const parsed: unknown = JSON.parse(row.gpx_splits); return Array.isArray(parsed) ? parsed.map(String) : [] } catch { return [] } })() : undefined }))); setWorkoutsLoading(false) }
   useEffect(() => { const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => { const userId = session?.user.id ?? null; setCurrentUserId(userId); if (userId) void loadWorkouts(userId); else { setWorkouts([]); setWorkoutsLoading(false) } setAuthLoading(false) }); void supabase.auth.getSession().then(({ data }) => { const userId = data.session?.user.id ?? null; setCurrentUserId(userId); if (userId) void loadWorkouts(userId); else setWorkoutsLoading(false); setAuthLoading(false) }); return () => listener.subscription.unsubscribe() }, [])
 
+  useEffect(() => { void Promise.all([
+    supabase.from('muscle_groups').select('id, name').order('name'),
+    supabase.from('exercises').select('id, name, muscle_group_id, muscle_groups(name)').order('name'),
+  ]).then(([groupsResult, exercisesResult]) => {
+    if (!groupsResult.error && groupsResult.data) setMuscleGroups(groupsResult.data.map(row => row.name))
+    if (!exercisesResult.error && exercisesResult.data) setCatalog((exercisesResult.data as ExerciseRow[]).map(row => ({ id: row.id, name: row.name, group: row.muscle_groups?.name ?? 'Personalizado', sets: 3, reps: 10, weight: 0 })))
+  }) }, [])
+
   const addWorkout = async () => {
     if (!newTitle.trim()) return
     if (!currentUserId) { window.alert('Inicia sesión para guardar tu entrenamiento.'); return }
@@ -143,7 +152,7 @@ function App() {
         }
       }
       if (newType === 'Gimnasio' && selectedExercises.length > 0) {
-        const gymRows = selectedExercises.flatMap(exercise => Array.from({ length: Math.max(1, exercise.sets) }, (_, index) => ({ workout_id: workout.id, exercise_name: exercise.name, set_order: index + 1, reps: exercise.reps, weight_kg: exercise.weight })))
+        const gymRows = selectedExercises.flatMap(exercise => Array.from({ length: Math.max(1, exercise.sets) }, (_, index) => ({ workout_id: workout.id, exercise_id: exercise.id, set_order: index + 1, reps: exercise.reps, weight_kg: exercise.weight })))
         const { error: gymLogError } = await supabase.from('gym_logs').insert(gymRows)
         if (gymLogError) { window.alert(`No se pudieron guardar los ejercicios: ${gymLogError.message}`); return }
       }
@@ -175,7 +184,7 @@ function App() {
         const { error: exerciseDeleteError } = await supabase.from('gym_logs').delete().eq('workout_id', updated.id)
         if (exerciseDeleteError) { window.alert(`No se pudieron actualizar los ejercicios: ${exerciseDeleteError.message}`); return }
         if (updated.exercises?.length) {
-          const gymRows = updated.exercises.flatMap(exercise => Array.from({ length: Math.max(1, exercise.sets) }, (_, index) => ({ workout_id: updated.id, exercise_name: exercise.name, set_order: index + 1, reps: exercise.reps, weight_kg: exercise.weight })))
+          const gymRows = updated.exercises.flatMap(exercise => Array.from({ length: Math.max(1, exercise.sets) }, (_, index) => ({ workout_id: updated.id, exercise_id: exercise.id, set_order: index + 1, reps: exercise.reps, weight_kg: exercise.weight })))
           const { error: exerciseInsertError } = await supabase.from('gym_logs').insert(gymRows)
           if (exerciseInsertError) { window.alert(`No se pudieron guardar los ejercicios: ${exerciseInsertError.message}`); return }
         }
@@ -217,7 +226,7 @@ function App() {
     if (workout.type !== 'Gimnasio') { setSelectedWorkout(workout); return }
     const { data, error } = await supabase.from('gym_logs').select('*').eq('workout_id', workout.id).order('created_at', { ascending: true })
     if (error) { window.alert(`No se pudieron cargar los ejercicios: ${error.message}`); setSelectedWorkout(workout); return }
-    setSelectedWorkout({ ...workout, exercises: (data ?? []).reduce<Exercise[]>((result, row) => { const existing = result.find(item => item.name === row.exercise_name); if (existing) { existing.sets += 1 } else result.push({ id: String(row.id), name: row.exercise_name, group: catalog.find(item => item.name === row.exercise_name)?.group ?? 'Personalizado', sets: 1, reps: Number(row.reps) || 1, weight: Number(row.weight_kg) || 0 }); return result }, []) })
+    setSelectedWorkout({ ...workout, exercises: (data ?? []).reduce<Exercise[]>((result, row) => { const exercise = catalog.find(item => item.id === row.exercise_id); if (!exercise) return result; const existing = result.find(item => item.id === exercise.id); if (existing) { existing.sets += 1 } else result.push({ ...exercise, sets: 1, reps: Number(row.reps) || 1, weight: Number(row.weight_kg) || 0 }); return result }, []) })
   }
 
   if (authLoading) return <div className="loading-state">Conectando con Supabase…</div>
@@ -320,7 +329,7 @@ function WorkoutModal({ catalog, groups, newTitle, setNewTitle, newType, setNewT
         if (Number.isFinite(minutes) && minutes >= 0) {
           const wholeMinutes = Math.floor(minutes)
           const seconds = Math.round((minutes - wholeMinutes) * 60)
-          splitTimes.push(`${nextKm}: ${wholeMinutes}:${String(seconds === 60 ? 0 : seconds).padStart(2, '0')} min/km`)
+          splitTimes.push(`${nextKm}: ${seconds === 60 ? wholeMinutes + 1 : wholeMinutes}:${String(seconds === 60 ? 0 : seconds).padStart(2, '0')} min/km`)
           previousSplitTime = boundaryTime
         }
         nextKm += 1
