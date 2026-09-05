@@ -106,6 +106,7 @@ function App() {
   const [exerciseGroup, setExerciseGroup] = useState('Todos')
   const [catalog, setCatalog] = useState(exerciseCatalog)
   const [muscleGroups, setMuscleGroups] = useState(() => Array.from(new Set(exerciseCatalog.map(exercise => exercise.group))))
+  const [muscleGroupIds, setMuscleGroupIds] = useState<Record<string, string>>({})
   const [runningMode, setRunningMode] = useState<'Rodaje' | 'Series'>('Rodaje')
   const [runningDistance, setRunningDistance] = useState('')
   const [runningTime, setRunningTime] = useState('')
@@ -129,9 +130,24 @@ function App() {
     supabase.from('muscle_groups').select('id, name').order('name'),
     supabase.from('exercises').select('id, name, muscle_group_id, muscle_groups(name)').order('name'),
   ]).then(([groupsResult, exercisesResult]) => {
-    if (!groupsResult.error && groupsResult.data) setMuscleGroups(groupsResult.data.map(row => row.name))
+    if (!groupsResult.error && groupsResult.data) {
+      setMuscleGroups(groupsResult.data.map(row => row.name))
+      setMuscleGroupIds(Object.fromEntries(groupsResult.data.map(row => [row.name, row.id])))
+    }
     if (!exercisesResult.error && exercisesResult.data) setCatalog((exercisesResult.data as ExerciseRow[]).map(row => ({ id: row.id, name: row.name, group: row.muscle_groups?.name ?? 'Personalizado', sets: 3, reps: 10, weight: 0 })))
   }) }, [])
+
+  const refreshExerciseLibrary = async () => {
+    const [{ data: groups }, { data: exercises }] = await Promise.all([
+      supabase.from('muscle_groups').select('id, name').order('name'),
+      supabase.from('exercises').select('id, name, muscle_group_id, muscle_groups(name)').order('name'),
+    ])
+    if (groups) {
+      setMuscleGroups(groups.map(row => row.name))
+      setMuscleGroupIds(Object.fromEntries(groups.map(row => [row.name, row.id])))
+    }
+    if (exercises) setCatalog((exercises as ExerciseRow[]).map(row => ({ id: row.id, name: row.name, group: row.muscle_groups?.name ?? 'Personalizado', sets: 3, reps: 10, weight: 0 })))
+  }
 
   const addWorkout = async () => {
     if (!newTitle.trim()) return
@@ -142,10 +158,9 @@ function App() {
       const { error } = await supabase.from('workouts').insert({ id: workout.id, user_id: currentUserId, title: workout.title, type: workout.type, workout_date: workout.date, rpe: workout.rpe, comments: null })
       if (error) { window.alert(`No se pudo guardar el entrenamiento: ${error.message}`); return }
       if (newType === 'Running') {
-        const paceToText = workout.pace?.trim() || null
         const runningRows = runningMode === 'Series'
           ? runningBlocks.flatMap((block, index) => Array.from({ length: Math.max(1, block.repetitions) }, (_, repetition) => ({ workout_id: workout.id, block_order: index + 1, block_type: 'series', distance_meters: Number(block.distance) || null, duration_seconds: null, avg_pace: block.pace?.trim() || null, avg_hr: null, elevation_gain_meters: null })))
-          : [{ workout_id: workout.id, block_order: 1, block_type: 'rodaje', distance_meters: workout.distance && Number.isFinite(Number(workout.distance)) ? Number(workout.distance) * 1000 : null, duration_seconds: runningTime ? Math.round(Number(runningTime) * 60) : null, avg_pace: paceToText, avg_hr: null, elevation_gain_meters: gpxSummary?.elevationGain ?? null }]
+          : [{ workout_id: workout.id, block_order: 1, block_type: 'rodaje', distance_meters: workout.distance && Number.isFinite(Number(workout.distance)) ? Number(workout.distance) * 1000 : null, duration_seconds: runningTime ? Math.round(Number(runningTime) * 60) : null, avg_pace: workout.pace?.trim() || null, avg_hr: null, elevation_gain_meters: gpxSummary?.elevationGain ?? null }]
         if (runningRows.length > 0) {
           const { error: runningLogError } = await supabase.from('running_logs').insert(runningRows)
           if (runningLogError) { window.alert(`No se pudieron guardar los datos de running: ${runningLogError.message}`); return }
@@ -243,7 +258,7 @@ function App() {
       {authLoading || workoutsLoading ? <div className="loading-state">Cargando tus entrenamientos…</div> : section === 'summary' && <Summary workouts={workouts} onHistory={() => setSection('history')} onSelectWorkout={selectWorkout} calendarMode={calendarMode} setCalendarMode={setCalendarMode} />}
       {section === 'history' && <History workouts={workouts} onAdd={() => setShowForm(true)} onSelect={selectWorkout} />}
       {section === 'planner' && <Planner goal={goal} setGoal={setGoal} plan={plan} onGenerate={generatePlan} />}
-      {section === 'exercises' && <ExerciseLibrary catalog={catalog} groups={muscleGroups} onAddGroup={group => setMuscleGroups([...muscleGroups, group])} onAddExercise={exercise => setCatalog([...catalog, { ...exercise, id: `custom-${Date.now()}` }])} />}
+      {section === 'exercises' && <ExerciseLibrary catalog={catalog} groups={muscleGroups} groupIds={muscleGroupIds} onAddGroup={async group => { const { error } = await supabase.from('muscle_groups').insert({ name: group, description: group }); if (error) window.alert(`No se pudo guardar el grupo muscular: ${error.message}`); else await refreshExerciseLibrary() }} onAddExercise={async exercise => { const muscleGroupId = muscleGroupIds[exercise.group]; if (!muscleGroupId) { window.alert('Selecciona un grupo muscular válido.'); return } const { error } = await supabase.from('exercises').insert({ name: exercise.name, muscle_group_id: muscleGroupId }); if (error) window.alert(`No se pudo guardar el ejercicio: ${error.message}`); else await refreshExerciseLibrary() }} />}
     </main>
     {showForm && <WorkoutModal catalog={catalog} groups={muscleGroups} newTitle={newTitle} setNewTitle={setNewTitle} newType={newType} setNewType={setNewType} workoutDate={newWorkoutDate} setWorkoutDate={setNewWorkoutDate} rpe={rpe} setRpe={setRpe} selectedExercises={selectedExercises} setSelectedExercises={setSelectedExercises} search={exerciseSearch} setSearch={setExerciseSearch} group={exerciseGroup} setGroup={setExerciseGroup} runningMode={runningMode} setRunningMode={setRunningMode} runningDistance={runningDistance} setRunningDistance={setRunningDistance} runningTime={runningTime} setRunningTime={setRunningTime} realPace={realPace} setRealPace={setRealPace} gpxFileName={gpxFileName} setGpxFileName={setGpxFileName} gpxSummary={gpxSummary} setGpxSummary={setGpxSummary} targetPace={targetPace} setTargetPace={setTargetPace} runningBlocks={runningBlocks} setRunningBlocks={setRunningBlocks} onSave={addWorkout} onClose={() => setShowForm(false)} />}
     {selectedWorkout && <WorkoutDetail catalog={catalog} groups={muscleGroups} workout={selectedWorkout} onClose={() => setSelectedWorkout(null)} onSave={updateWorkout} onDelete={deleteWorkout} />}
@@ -365,7 +380,7 @@ function WorkoutModal({ catalog, groups, newTitle, setNewTitle, newType, setNewT
 
 
 
-function ExerciseLibrary({ catalog, groups, onAddGroup, onAddExercise }: { catalog: Exercise[]; groups: string[]; onAddGroup: (group: string) => void; onAddExercise: (exercise: Omit<Exercise, 'id'>) => void }) {
+function ExerciseLibrary({ catalog, groups, groupIds, onAddGroup, onAddExercise }: { catalog: Exercise[]; groups: string[]; groupIds: Record<string, string>; onAddGroup: (group: string) => Promise<void>; onAddExercise: (exercise: Omit<Exercise, 'id'>) => Promise<void> }) {
   const [tab, setTab] = useState<'exercises' | 'groups'>('exercises')
   const [search, setSearch] = useState('')
   const [group, setGroup] = useState('Todos')
@@ -373,9 +388,10 @@ function ExerciseLibrary({ catalog, groups, onAddGroup, onAddExercise }: { catal
   const [newGroup, setNewGroup] = useState('')
   const [exerciseGroup, setExerciseGroup] = useState(groups[0] ?? 'Pecho')
   const filtered = catalog.filter(exercise => exercise.name.toLowerCase().includes(search.toLowerCase()) && (group === 'Todos' || exercise.group === group))
-  const createGroup = () => { const value = newGroup.trim(); if (value && !groups.includes(value)) { onAddGroup(value); setExerciseGroup(value); setNewGroup('') } }
-  const createExercise = () => { if (name.trim()) { onAddExercise({ name: name.trim(), group: exerciseGroup, sets: 3, reps: 10, weight: 0 }); setName('') } }
-  return <section className="content-section library-page"><div className="section-heading"><div><p className="eyebrow">BIBLIOTECA PERSONAL</p><h2>Ejercicios y grupos musculares</h2></div></div><div className="library-tabs"><button className={tab === 'exercises' ? 'library-tab active' : 'library-tab'} onClick={() => setTab('exercises')}>Ejercicios <span>{catalog.length}</span></button><button className={tab === 'groups' ? 'library-tab active' : 'library-tab'} onClick={() => setTab('groups')}>Grupos musculares <span>{groups.length}</span></button></div>{tab === 'exercises' ? <><div className="library-toolbar"><input value={search} onChange={event => setSearch(event.target.value)} placeholder="Buscar ejercicio..." /><select value={group} onChange={event => setGroup(event.target.value)}><option>Todos</option>{groups.map(item => <option key={item}>{item}</option>)}</select></div><div className="library-grid">{filtered.map(exercise => <div className="library-card" key={exercise.id}><div className="workout-icon">↗</div><div><strong>{exercise.name}</strong><span>{exercise.group}</span></div></div>)}</div><div className="create-panel"><p className="eyebrow">AÑADIR EJERCICIO</p><div className="create-row"><input value={name} onChange={event => setName(event.target.value)} placeholder="Nombre del ejercicio" /><select value={exerciseGroup} onChange={event => setExerciseGroup(event.target.value)}>{groups.map(item => <option key={item}>{item}</option>)}</select><button className="primary-button" onClick={createExercise}>Crear ejercicio</button></div></div></> : <><div className="group-grid">{groups.map(item => <div className="group-card" key={item}><strong>{item}</strong><span>{catalog.filter(exercise => exercise.group === item).length} ejercicios</span></div>)}</div><div className="create-panel"><p className="eyebrow">CREAR GRUPO MUSCULAR</p><div className="create-row"><input value={newGroup} onChange={event => setNewGroup(event.target.value)} placeholder="Ej. Glúteos" /><button className="primary-button" onClick={createGroup}>Crear grupo</button></div></div></>}</section>
+  const [busy, setBusy] = useState(false)
+  const createGroup = async () => { const value = newGroup.trim(); if (!value || groups.includes(value)) return; setBusy(true); await onAddGroup(value); setExerciseGroup(value); setNewGroup(''); setBusy(false) }
+  const createExercise = async () => { if (!name.trim() || !groupIds[exerciseGroup]) return; setBusy(true); await onAddExercise({ name: name.trim(), group: exerciseGroup, sets: 3, reps: 10, weight: 0 }); setName(''); setBusy(false) }
+  return <section className="content-section library-page"><div className="section-heading"><div><p className="eyebrow">BIBLIOTECA PERSONAL</p><h2>Ejercicios y grupos musculares</h2></div></div><div className="library-tabs"><button className={tab === 'exercises' ? 'library-tab active' : 'library-tab'} onClick={() => setTab('exercises')}>Ejercicios <span>{catalog.length}</span></button><button className={tab === 'groups' ? 'library-tab active' : 'library-tab'} onClick={() => setTab('groups')}>Grupos musculares <span>{groups.length}</span></button></div>{tab === 'exercises' ? <><div className="library-toolbar"><input value={search} onChange={event => setSearch(event.target.value)} placeholder="Buscar ejercicio..." /><select value={group} onChange={event => setGroup(event.target.value)}><option>Todos</option>{groups.map(item => <option key={item}>{item}</option>)}</select></div><div className="library-grid">{filtered.map(exercise => <div className="library-card" key={exercise.id}><div className="workout-icon">↗</div><div><strong>{exercise.name}</strong><span>{exercise.group}</span></div></div>)}</div><div className="create-panel"><p className="eyebrow">AÑADIR EJERCICIO</p><div className="create-row"><input value={name} onChange={event => setName(event.target.value)} placeholder="Nombre del ejercicio" /><select value={exerciseGroup} onChange={event => setExerciseGroup(event.target.value)}>{groups.map(item => <option key={item}>{item}</option>)}</select><button className="primary-button" onClick={() => void createExercise()} disabled={busy}>Crear ejercicio</button></div></div></> : <><div className="group-grid">{groups.map(item => <div className="group-card" key={item}><strong>{item}</strong><span>{catalog.filter(exercise => exercise.group === item).length} ejercicios</span></div>)}</div><div className="create-panel"><p className="eyebrow">CREAR GRUPO MUSCULAR</p><div className="create-row"><input value={newGroup} onChange={event => setNewGroup(event.target.value)} placeholder="Ej. Glúteos" /><button className="primary-button" onClick={() => void createGroup()} disabled={busy}>Crear grupo</button></div></div></>}</section>
 }
 
 function AuthScreen({ mode, setMode, email, setEmail, password, setPassword, error, busy, onSubmit }: { mode: 'login' | 'signup'; setMode: (mode: 'login' | 'signup') => void; email: string; setEmail: (value: string) => void; password: string; setPassword: (value: string) => void; error: string; busy: boolean; onSubmit: () => void }) {
