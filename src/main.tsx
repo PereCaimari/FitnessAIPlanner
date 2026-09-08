@@ -148,6 +148,20 @@ function App() {
   const loadWorkouts = async (userId: string) => { const { data, error } = await supabase.from('workouts').select('*').eq('user_id', userId).order('created_at', { ascending: false }); if (error) window.alert(error.message); else setWorkouts((data ?? []).map(row => ({ id: row.id, title: row.title, type: row.type, date: row.workout_date, duration: `${row.duration_minutes ?? 0} min`, rpe: Number(row.rpe ?? String(row.intensity ?? '').replace(/\D/g, '')) || 5, distance: row.distance_km?.toString(), pace: typeof row.average_pace_seconds === 'number' ? `${Math.floor(row.average_pace_seconds / 60)}:${String(row.average_pace_seconds % 60).padStart(2, '0')}` : undefined, gpxSplits: Array.isArray(row.gpx_splits) ? row.gpx_splits : typeof row.gpx_splits === 'string' ? (() => { try { const parsed: unknown = JSON.parse(row.gpx_splits); return Array.isArray(parsed) ? parsed.map(String) : [] } catch { return [] } })() : undefined }))); setWorkoutsLoading(false) }
   useEffect(() => { const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => { const userId = session?.user.id ?? null; setCurrentUserId(userId); if (userId) void loadWorkouts(userId); else { setWorkouts([]); setWorkoutsLoading(false) } setAuthLoading(false) }); void supabase.auth.getSession().then(({ data }) => { const userId = data.session?.user.id ?? null; setCurrentUserId(userId); if (userId) void loadWorkouts(userId); else setWorkoutsLoading(false); setAuthLoading(false) }); return () => listener.subscription.unsubscribe() }, [])
 
+  useEffect(() => {
+    const pending = sessionStorage.getItem('fitness-planner-pending-answers')
+    if (!pending) return
+    try {
+      const restored = JSON.parse(pending) as PlannerAnswers
+      setPlannerAnswers(restored)
+      setPlannerStep(4)
+      setSection('planner')
+      sessionStorage.removeItem('fitness-planner-pending-answers')
+    } catch {
+      sessionStorage.removeItem('fitness-planner-pending-answers')
+    }
+  }, [])
+
   useEffect(() => { void Promise.all([
     supabase.from('muscle_groups').select('id, name').order('name'),
     supabase.from('exercises').select('id, name, muscle_group_id, muscle_groups(name)').order('name'),
@@ -252,6 +266,12 @@ function App() {
 
   const generatePlan = async () => {
     if (!plannerAnswers.goal.trim()) return
+    if (!blink.auth.isAuthenticated()) {
+      sessionStorage.setItem('fitness-planner-pending-answers', JSON.stringify(plannerAnswers))
+      window.alert('Para generar tu plan, activa primero el acceso al entrenador IA. Volverás aquí automáticamente.')
+      await blink.auth.login(window.location.href)
+      return
+    }
     try {
       const { object } = await blink.ai.generateObject({
         prompt: `Genera un plan de entrenamiento estructurado. Modalidades permitidas: ${plannerAnswers.modalities.join(', ')}. Intensidades permitidas: Baja, Moderada, Alta. El status debe ser scheduled. Genera exactamente ${plannerAnswers.sessionsPerWeek} sesiones por semana durante ${plannerAnswers.planWeeks} semanas, empezando el próximo lunes. Una sesión debe tener una sola modalidad principal. No generes modalidades no seleccionadas. Para una sesión no aplicable, devuelve runningDetails o swimmingDetails como objeto vacío y exercises como array vacío. Respuestas del usuario: ${JSON.stringify(plannerAnswers)}`,
