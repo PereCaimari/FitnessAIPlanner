@@ -106,6 +106,10 @@ function parseGpxFile(file: File): Promise<GpxSummary> {
   })
 }
 
+function normalizeExerciseName(value: string) {
+  return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+}
+
 function App() {
   const [section, setSection] = useState<Section>('summary')
   const [workouts, setWorkouts] = useState<Workout[]>(initialWorkouts)
@@ -274,7 +278,7 @@ function App() {
     }
     try {
       const { object } = await blink.ai.generateObject({
-        prompt: `Genera un plan de entrenamiento estructurado. Modalidades permitidas: ${plannerAnswers.modalities.join(', ')}. Intensidades permitidas: Baja, Moderada, Alta. El status debe ser scheduled. Genera exactamente ${plannerAnswers.sessionsPerWeek} sesiones por semana durante ${plannerAnswers.planWeeks} semanas, empezando el próximo lunes. Una sesión debe tener una sola modalidad principal. No generes modalidades no seleccionadas. Para una sesión no aplicable, devuelve runningDetails o swimmingDetails como objeto vacío y exercises como array vacío. Respuestas del usuario: ${JSON.stringify(plannerAnswers)}`,
+        prompt: `Genera un plan de entrenamiento estructurado. Modalidades permitidas: ${plannerAnswers.modalities.join(', ')}. Intensidades permitidas: Baja, Moderada, Alta. El status debe ser scheduled. Genera exactamente ${plannerAnswers.sessionsPerWeek} sesiones por semana durante ${plannerAnswers.planWeeks} semanas, empezando el próximo lunes. Una sesión debe tener una sola modalidad principal. No generes modalidades no seleccionadas. Para una sesión no aplicable, devuelve runningDetails o swimmingDetails como objeto vacío y exercises como array vacío. Para sesiones de Gimnasio, usa EXCLUSIVAMENTE estos nombres exactos de ejercicios de la biblioteca, sin traducirlos ni reformularlos: ${catalog.map(exercise => exercise.name).join(' | ')}. Si no hay ejercicios disponibles, devuelve exercises como array vacío. Respuestas del usuario: ${JSON.stringify(plannerAnswers)}`,
         schema: aiPlanSchema,
       })
       const validated = validateAiPlan(object, plannerAnswers)
@@ -290,6 +294,13 @@ function App() {
     setPlanSaving(true)
     setPlanSaved(false)
     try {
+      const libraryByName = new Map(catalog.map(exercise => [normalizeExerciseName(exercise.name), exercise]))
+      const unresolvedExercises = [...new Set(plan.sessions.flatMap(session => session.type === 'Gimnasio' ? (session.exercises ?? []).map(exercise => exercise.name).filter(name => !libraryByName.has(normalizeExerciseName(name))) : []))]
+      if (unresolvedExercises.length) throw new Error(`El plan contiene ejercicios que no están en tu biblioteca: ${unresolvedExercises.join(', ')}. Regenera el plan para usar únicamente ejercicios disponibles.`)
+      const resolvedExercises = plan.sessions.flatMap((session, index) => (session.exercises ?? []).map((exercise, exerciseIndex) => {
+        const libraryExercise = libraryByName.get(normalizeExerciseName(exercise.name))
+        return { sessionIndex: index, exerciseIndex, exercise, libraryExercise }
+      }))
       const { data: savedPlan, error: planError } = await supabase.from('training_plans').insert({
         user_id: currentUserId,
         title: plan.plan.title,
@@ -321,8 +332,9 @@ function App() {
       if (sessionsError) throw new Error(sessionsError.message)
 
       const sessionByOrder = new Map((savedSessions ?? []).map(session => [session.sort_order, session.id]))
-      const exerciseRows = plan.sessions.flatMap((session, index) => (session.exercises ?? []).map((exercise, exerciseIndex) => ({
-        session_id: sessionByOrder.get(index),
+      const exerciseRows = resolvedExercises.map(({ sessionIndex, exerciseIndex, exercise, libraryExercise }) => ({
+        session_id: sessionByOrder.get(sessionIndex),
+        exercise_id: libraryExercise!.id,
         name_snapshot: exercise.name,
         sets: Math.max(1, Number(exercise.sets) || 1),
         reps: Number(exercise.reps) || null,
@@ -330,7 +342,7 @@ function App() {
         rest_seconds: Number(exercise.restSeconds) || null,
         notes: exercise.notes || null,
         sort_order: exerciseIndex,
-      }))).filter(row => row.session_id)
+      })).filter(row => row.session_id)
       if (exerciseRows.length) {
         const { error: exercisesError } = await supabase.from('training_plan_exercises').insert(exerciseRows)
         if (exercisesError) throw new Error(exercisesError.message)
