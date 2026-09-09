@@ -7,6 +7,7 @@ export type PlannerAnswers = {
   sessionsPerWeek: string
   sessionMinutes: string
   planWeeks: string
+  startDate: string
   availability: string
   limitations: string
   runningDistance: string
