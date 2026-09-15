@@ -268,7 +268,8 @@ function App() {
 
   const updateWorkout = async (updated: Workout) => {
     try {
-      const { error } = await supabase.from('workouts').update({ title: updated.title, type: updated.type, workout_date: updated.date, rpe: updated.rpe }).eq('id', updated.id)
+      const durationMinutes = Number.parseFloat(updated.duration.replace(/\s*min$/, ''))
+      const { error } = await supabase.from('workouts').update({ title: updated.title, type: updated.type, workout_date: updated.date, duration_minutes: Number.isFinite(durationMinutes) && durationMinutes > 0 ? durationMinutes : null, rpe: updated.rpe }).eq('id', updated.id)
       if (error) { window.alert(`No se pudo actualizar el entrenamiento: ${error.message}`); return }
       if (updated.type === 'Gimnasio') {
         const { error: exerciseDeleteError } = await supabase.from('gym_logs').delete().eq('workout_id', updated.id)
