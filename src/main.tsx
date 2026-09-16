@@ -113,6 +113,13 @@ function normalizeExerciseName(value: string) {
   return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
 }
 
+function getUserName(user: { user_metadata?: Record<string, unknown>; email?: string } | null) {
+  const metadata = user?.user_metadata ?? {}
+  const name = metadata.full_name ?? metadata.name ?? metadata.display_name
+  if (typeof name === 'string' && name.trim()) return name.trim()
+  return user?.email?.split('@')[0] ?? 'Usuario'
+}
+
 function App() {
   const [section, setSection] = useState<Section>('summary')
   const [workouts, setWorkouts] = useState<Workout[]>(initialWorkouts)
@@ -120,6 +127,7 @@ function App() {
   const [showForm, setShowForm] = useState(false)
   const [pendingPlanSession, setPendingPlanSession] = useState<SavedPlanSession | null>(null)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+  const [currentUserName, setCurrentUserName] = useState('Usuario')
   const [authLoading, setAuthLoading] = useState(true)
   const [newTitle, setNewTitle] = useState('')
   const [newType, setNewType] = useState('Gimnasio')
@@ -171,7 +179,7 @@ function App() {
     setSavedPlans((plans ?? []).map(row => ({ id: row.id, title: row.title, goal: row.goal, summary: row.summary, durationWeeks: row.duration_weeks, sessionsPerWeek: row.sessions_per_week, status: row.status, createdAt: row.created_at, sessions: (sessions ?? []).filter(session => session.plan_id === row.id).map(session => ({ id: session.id, weekNumber: session.week_number, dayLabel: session.day_label, scheduledDate: session.scheduled_date, title: session.title, type: session.type, durationMinutes: session.duration_minutes, intensity: session.intensity, status: session.status, notes: session.notes, exercises: (exercises ?? []).filter(exercise => exercise.session_id === session.id).map(exercise => ({ name: exercise.name_snapshot, sets: exercise.sets, reps: exercise.reps })) })) })))
     setPlansLoading(false)
   }
-  useEffect(() => { const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => { const userId = session?.user.id ?? null; setCurrentUserId(userId); if (userId) { void loadWorkouts(userId); void loadSavedPlans(userId) } else { setWorkouts([]); setSavedPlans([]); setWorkoutsLoading(false) } setAuthLoading(false) }); void supabase.auth.getSession().then(({ data }) => { const userId = data.session?.user.id ?? null; setCurrentUserId(userId); if (userId) { void loadWorkouts(userId); void loadSavedPlans(userId) } else setWorkoutsLoading(false); setAuthLoading(false) }); return () => listener.subscription.unsubscribe() }, [])
+  useEffect(() => { const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => { const userId = session?.user.id ?? null; setCurrentUserId(userId); setCurrentUserName(getUserName(session?.user ?? null)); if (userId) { void loadWorkouts(userId); void loadSavedPlans(userId) } else { setWorkouts([]); setSavedPlans([]); setWorkoutsLoading(false) } setAuthLoading(false) }); void supabase.auth.getSession().then(({ data }) => { const userId = data.session?.user.id ?? null; setCurrentUserId(userId); setCurrentUserName(getUserName(data.session?.user ?? null)); if (userId) { void loadWorkouts(userId); void loadSavedPlans(userId) } else setWorkoutsLoading(false); setAuthLoading(false) }); return () => listener.subscription.unsubscribe() }, [])
 
   useEffect(() => {
     const pending = sessionStorage.getItem('fitness-planner-pending-answers')
@@ -439,10 +447,10 @@ function App() {
     <aside className="sidebar">
       <div className="brand"><div className="brand-mark">AI</div><div><strong>Fitness Planner</strong><small>Tu progreso, más inteligente</small></div></div>
       <nav aria-label="Navegación principal">{navItems.map(item => <button key={item.id} className={`nav-item ${section === item.id ? 'active' : ''}`} onClick={() => setSection(item.id)}><span>{item.icon}</span>{item.label}</button>)}</nav>
-      <div className="sidebar-bottom"><button className="help-button">? <span>Ayuda y consejos</span></button><div className="profile"><div className="avatar">PC</div><div><strong>Pere</strong><small>Mi perfil</small></div><span>•••</span></div></div>
+      <div className="sidebar-bottom"><button className="help-button">? <span>Ayuda y consejos</span></button><div className="profile"><div className="avatar">{currentUserName.slice(0, 2).toUpperCase()}</div><div><strong>{currentUserName}</strong><small>Mi perfil</small></div><span>•••</span></div></div>
     </aside>
     <main className="main-content">
-      <header className="topbar"><div><p className="eyebrow">{section === 'summary' ? 'BUENOS DÍAS, PERE' : section === 'history' ? 'TU ACTIVIDAD' : section === 'planner' ? 'ASISTENTE PERSONAL' : 'BIBLIOTECA'}</p><h1>{section === 'summary' ? 'Tu resumen' : section === 'history' ? 'Historial de entrenamientos' : section === 'planner' ? 'Planificador IA' : 'Ejercicios y grupos'}</h1></div>{section === 'summary' && <button className="primary-button" onClick={() => setShowForm(true)}>＋ Registrar entrenamiento</button>}</header>
+      <header className="topbar"><div><p className="eyebrow">{section === 'summary' ? `BUENOS DÍAS, ${currentUserName.toUpperCase()}` : section === 'history' ? 'TU ACTIVIDAD' : section === 'planner' ? 'ASISTENTE PERSONAL' : 'BIBLIOTECA'}</p><h1>{section === 'summary' ? 'Tu resumen' : section === 'history' ? 'Historial de entrenamientos' : section === 'planner' ? 'Planificador IA' : 'Ejercicios y grupos'}</h1></div>{section === 'summary' && <button className="primary-button" onClick={() => setShowForm(true)}>＋ Registrar entrenamiento</button>}</header>
       {authLoading || workoutsLoading ? <div className="loading-state">Cargando tus entrenamientos…</div> : section === 'summary' && <Summary workouts={workouts} savedPlans={savedPlans} onHistory={() => setSection('history')} onSelectWorkout={selectWorkout} onStartPlannedSession={startPlannedSession} calendarMode={calendarMode} setCalendarMode={setCalendarMode} />}
       {section === 'history' && <History workouts={workouts} onAdd={() => setShowForm(true)} onSelect={selectWorkout} />}
       {section === 'planner' && <><Planner answers={plannerAnswers} setAnswers={setPlannerAnswers} step={plannerStep} setStep={setPlannerStep} onGenerate={generatePlan} onSavePlan={saveGeneratedPlan} plan={plan} planSaving={planSaving} planSaved={planSaved} /><SavedPlans plans={savedPlans} loading={plansLoading} selectedPlanId={selectedPlanId} onSelect={setSelectedPlanId} onDelete={deleteSavedPlan} /></>}
