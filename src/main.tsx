@@ -591,8 +591,8 @@ function WorkoutModal({ plannedSession, catalog, groups, newTitle, setNewTitle, 
     setGpxFileName(file.name)
   }
   const handleGpx = (event: React.ChangeEvent<HTMLInputElement>) => { const file = event.target.files?.[0]; if (file) void parseGpx(file).catch(error => window.alert(error instanceof Error ? error.message : 'No se pudo leer el archivo GPX.')) }
-  const available = catalog.filter(exercise => exercise.name.toLowerCase().includes(search.toLowerCase()) && (group === 'Todos' || exercise.group === group) && !selectedExercises.some(selected => selected.id === exercise.id))
-  const toggleExercise = (exercise: Exercise) => setSelectedExercises([...selectedExercises, { ...exercise }])
+  const available = catalog.filter((exercise, index, all) => all.findIndex(item => normalizeExerciseName(item.name) === normalizeExerciseName(exercise.name)) === index && exercise.name.toLowerCase().includes(search.toLowerCase()) && (group === 'Todos' || exercise.group === group) && !selectedExercises.some(selected => normalizeExerciseName(selected.name) === normalizeExerciseName(exercise.name)))
+  const toggleExercise = (exercise: Exercise) => { if (selectedExercises.some(selected => normalizeExerciseName(selected.name) === normalizeExerciseName(exercise.name))) return; setSelectedExercises([...selectedExercises, { ...exercise }]) }
   const updateExercise = (id: string, key: 'sets' | 'reps' | 'weight', value: number) => setSelectedExercises(selectedExercises.map(exercise => exercise.id === id ? { ...exercise, [key]: Math.max(0, value) } : exercise))
   const parsePace = (value: string) => { const parts = value.split(':').map(Number); return parts.length === 2 && parts.every(Number.isFinite) ? parts[0] + parts[1] / 60 : Number(value) }
   const totalMinutes = runningTime ? Number(runningTime) : 0
