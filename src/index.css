@@ -54,3 +54,23 @@ nav { display: grid; gap: 7px; }.nav-item { padding: 13px 14px; text-align: left
     text-align: center;
   }
 }
+
+/* Swimming comments get their own row so they never get clipped by the block grid. */
+.swimming-block > label:last-of-type {
+  grid-column: 2 / -2;
+  width: 100%;
+}
+.swimming-block > label:last-of-type textarea {
+  width: 100%;
+}
+
+@media (max-width: 700px) {
+  .swimming-block > label:last-of-type {
+    grid-column: 1 / -1;
+    width: calc(100% - 2px);
+  }
+  .swimming-block > label:last-of-type textarea {
+    min-height: 132px;
+    width: 100%;
+  }
+}
