@@ -215,6 +215,22 @@ function App() {
     if (error || !data) { window.alert(`No se pudo crear el objetivo: ${error?.message ?? 'respuesta vacía'}`); return }
     setGoals(current => [{ id: data.id, title: data.title, sport: goalSportLabel(String(data.sport)), targetValue: Number(data.target_value), currentValue: Number(data.current_value ?? 0), unit: data.unit, targetDate: data.target_date, status: data.status }, ...current])
   }
+  const updateGoal = async (id: string, input: Omit<Goal, 'id' | 'currentValue' | 'status'>) => {
+    if (!currentUserId) return
+    const sport = goalSportValue(input.sport)
+    const { data, error } = await supabase.from('goals').update({ title: input.title, sport, target_value: input.targetValue, unit: input.unit, target_date: input.targetDate }).eq('id', id).eq('user_id', currentUserId).select('id, title, sport, target_value, current_value, unit, target_date, status').single()
+    if (error || !data) { window.alert(`No se pudo actualizar el objetivo: ${error?.message ?? 'respuesta vacía'}`); return }
+    const updated = { id: data.id, title: data.title, sport: goalSportLabel(String(data.sport)), targetValue: Number(data.target_value), currentValue: Number(data.current_value ?? 0), unit: data.unit, targetDate: data.target_date, status: data.status }
+    setGoals(current => current.map(goal => goal.id === id ? updated : goal))
+    if (selectedGoal?.id === id) { setSelectedGoal(updated); await selectGoal(updated) }
+  }
+  const deleteGoal = async (id: string) => {
+    if (!currentUserId) return
+    const { error } = await supabase.from('goals').delete().eq('id', id).eq('user_id', currentUserId)
+    if (error) { window.alert(`No se pudo eliminar el objetivo: ${error.message}`); return }
+    setGoals(current => current.filter(goal => goal.id !== id))
+    if (selectedGoal?.id === id) { setSelectedGoal(null); setGoalLogs([]) }
+  }
 
   const loadSavedPlans = async (userId: string) => {
     setPlansLoading(true)
@@ -538,7 +554,7 @@ function App() {
       {authLoading || workoutsLoading ? <div className="loading-state">Cargando tus entrenamientos…</div> : section === 'summary' && <Summary workouts={workouts} goals={goals} savedPlans={savedPlans} muscleGroupRecords={muscleGroupRecords} onHistory={() => setSection('history')} onGoals={() => setSection('goals')} onSelectWorkout={selectWorkout} onStartPlannedSession={startPlannedSession} calendarMode={calendarMode} setCalendarMode={setCalendarMode} />}
       {section === 'history' && <History workouts={workouts} onAdd={() => setShowForm(true)} onSelect={selectWorkout} />}
       {section === 'planner' && <><Planner answers={plannerAnswers} setAnswers={setPlannerAnswers} step={plannerStep} setStep={setPlannerStep} onGenerate={generatePlan} onSavePlan={saveGeneratedPlan} plan={plan} planSaving={planSaving} planSaved={planSaved} /><SavedPlans plans={savedPlans} loading={plansLoading} selectedPlanId={selectedPlanId} onSelect={setSelectedPlanId} onDelete={deleteSavedPlan} /></>}
-      {section === 'goals' && <Goals goals={goals} loading={goalsLoading} selectedGoal={selectedGoal} logs={goalLogs} onCreate={createGoal} onSelect={selectGoal} />}
+      {section === 'goals' && <Goals goals={goals} loading={goalsLoading} selectedGoal={selectedGoal} logs={goalLogs} onCreate={createGoal} onUpdate={updateGoal} onDelete={deleteGoal} onSelect={selectGoal} />}
       {section === 'exercises' && <ExerciseLibrary catalog={catalog} groups={muscleGroups} groupIds={muscleGroupIds} muscleGroupRecords={muscleGroupRecords} onAddGroup={async group => { const { error } = await supabase.from('muscle_groups').insert({ name: group, description: group, image_url: null }); if (error) window.alert(`No se pudo guardar el grupo muscular: ${error.message}`); else await refreshExerciseLibrary() }} onUpdateGroup={async (groupId, description, imageUrl) => { const { error } = await supabase.from('muscle_groups').update({ description, image_url: imageUrl }).eq('id', groupId); if (error) window.alert(`No se pudo actualizar el grupo muscular: ${error.message}`); else await refreshExerciseLibrary() }} onAddExercise={async exercise => { const muscleGroupId = muscleGroupIds[exercise.group]; if (!muscleGroupId) { window.alert('Selecciona un grupo muscular válido.'); return } const { error } = await supabase.from('exercises').insert({ name: exercise.name, muscle_group_id: muscleGroupId }); if (error) window.alert(`No se pudo guardar el ejercicio: ${error.message}`); else await refreshExerciseLibrary() }} />}
     </main>
     {showForm && <WorkoutModal plannedSession={pendingPlanSession} catalog={catalog} groups={muscleGroups} muscleGroupRecords={muscleGroupRecords} newTitle={newTitle} setNewTitle={setNewTitle} newType={newType} setNewType={setNewType} workoutDate={newWorkoutDate} setWorkoutDate={setNewWorkoutDate} sessionDuration={sessionDuration} setSessionDuration={setSessionDuration} warmupComment={warmupComment} setWarmupComment={setWarmupComment} cooldownComment={cooldownComment} setCooldownComment={setCooldownComment} rpe={rpe} setRpe={setRpe} selectedExercises={selectedExercises} setSelectedExercises={setSelectedExercises} search={exerciseSearch} setSearch={setExerciseSearch} group={exerciseGroup} setGroup={setExerciseGroup} runningMode={runningMode} setRunningMode={setRunningMode} runningDistance={runningDistance} setRunningDistance={setRunningDistance} runningTime={runningTime} setRunningTime={setRunningTime} realPace={realPace} setRealPace={setRealPace} gpxFileName={gpxFileName} setGpxFileName={setGpxFileName} gpxSummary={gpxSummary} setGpxSummary={setGpxSummary} targetPace={targetPace} setTargetPace={setTargetPace} runningBlocks={runningBlocks} setRunningBlocks={setRunningBlocks} swimmingBlocks={swimmingBlocks} setSwimmingBlocks={setSwimmingBlocks} onSave={addWorkout} onClose={() => setShowForm(false)} />}
