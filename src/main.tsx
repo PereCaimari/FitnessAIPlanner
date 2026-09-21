@@ -483,18 +483,23 @@ function App() {
   const evaluateWorkoutGoals = async (workout: Workout) => {
     if (!currentUserId) return
     const activeGoals = goals.filter(goal => goal.status === 'in_progress')
-    if (!activeGoals.length || !blink.auth.isAuthenticated()) return
+    if (!activeGoals.length) return
     try {
-      const { object } = await blink.ai.generateObject({ prompt: `Evalúa si este entrenamiento representa progreso relevante para algún objetivo. Devuelve solo progreso medible y coherente. Entrenamiento: ${JSON.stringify(workout)}. Objetivos activos: ${JSON.stringify(activeGoals)}`, schema: { type: 'object', properties: { progress: { type: 'array', items: { type: 'object', properties: { goalId: { type: 'string' }, achievedValue: { type: 'number' }, feedback: { type: 'string' } }, required: ['goalId', 'achievedValue', 'feedback'] } } }, required: ['progress'] } })
-      const progress = Array.isArray((object as { progress?: unknown }).progress) ? (object as { progress: { goalId: string; achievedValue: number; feedback: string }[] }).progress : []
-      for (const item of progress) {
-        const goal = activeGoals.find(candidate => candidate.id === item.goalId)
-        if (!goal || !Number.isFinite(item.achievedValue) || item.achievedValue <= goal.currentValue) continue
-        const status = item.achievedValue >= goal.targetValue ? 'achieved' : 'in_progress'
-        const { error: logError } = await supabase.from('goal_logs').insert({ goal_id: goal.id, workout_id: workout.id, recorded_value: item.achievedValue, ai_feedback: item.feedback })
-        const { error: goalError } = await supabase.from('goals').update({ current_value: item.achievedValue, status }).eq('id', goal.id).eq('user_id', currentUserId)
+      for (const goal of activeGoals) {
+        const goalText = normalizeExerciseName(`${goal.title} ${goal.unit}`)
+        const workoutText = normalizeExerciseName(`${workout.title} ${(workout.exercises ?? []).map(exercise => exercise.name).join(' ')}`)
+        const goalWords = goalText.split(' ').filter(word => word.length > 3)
+        const matches = goalWords.some(word => workoutText.includes(word))
+        if (!matches) continue
+        const matchingExercises = (workout.exercises ?? []).filter(exercise => goalWords.some(word => normalizeExerciseName(exercise.name).includes(word)))
+        const achievedValue = matchingExercises.length ? Math.max(...matchingExercises.map(exercise => Number(exercise.reps) || 0)) : 1
+        if (!Number.isFinite(achievedValue) || achievedValue <= goal.currentValue) continue
+        const status = achievedValue >= goal.targetValue ? 'achieved' : 'in_progress'
+        const feedback = matchingExercises.length ? `Mejor registro detectado: ${achievedValue} ${goal.unit}.` : 'Progreso detectado en una sesión relacionada con este objetivo.'
+        const { error: logError } = await supabase.from('goal_logs').insert({ goal_id: goal.id, workout_id: workout.id, recorded_value: achievedValue, ai_feedback: feedback })
+        const { error: goalError } = await supabase.from('goals').update({ current_value: achievedValue, status }).eq('id', goal.id).eq('user_id', currentUserId)
         if (logError || goalError) continue
-        const updated = { ...goal, currentValue: item.achievedValue, status }
+        const updated = { ...goal, currentValue: achievedValue, status }
         setGoals(current => current.map(candidate => candidate.id === goal.id ? updated : candidate))
         if (selectedGoal?.id === goal.id) void selectGoal(updated)
       }
