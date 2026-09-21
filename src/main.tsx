@@ -191,7 +191,10 @@ function App() {
   const goalSportValue = (sport: string) => ({ 'Gimnasio': 'gym', 'Running': 'running', 'Natación': 'swimming', 'Personalizado': 'custom' }[sport] ?? 'custom')
   const loadGoals = async (userId: string) => {
     setGoalsLoading(true)
-    const { data, error } = await supabase.from('goals').select('id, title, sport, target_value, current_value, unit, target_date, status').eq('user_id', userId).order('target_date', { ascending: true })
+    const { data: authData } = await supabase.auth.getUser()
+    const authenticatedUserId = authData.user?.id
+    if (!authenticatedUserId || authenticatedUserId !== userId) { setGoals([]); setGoalsLoading(false); return }
+    const { data, error } = await supabase.from('goals').select('id, title, sport, target_value, current_value, unit, target_date, status').eq('user_id', authenticatedUserId).order('target_date', { ascending: true })
     if (error) window.alert(`No se pudieron cargar tus objetivos: ${error.message}`)
     else setGoals((data ?? []).map(row => ({ id: row.id, title: row.title, sport: goalSportLabel(String(row.sport)), targetValue: Number(row.target_value), currentValue: Number(row.current_value ?? 0), unit: row.unit, targetDate: row.target_date, status: row.status })))
     setGoalsLoading(false)
@@ -205,7 +208,10 @@ function App() {
   const createGoal = async (input: Omit<Goal, 'id' | 'currentValue' | 'status'>) => {
     if (!currentUserId) return
     const sport = goalSportValue(input.sport)
-    const { data, error } = await supabase.from('goals').insert({ user_id: currentUserId, title: input.title, sport, target_value: input.targetValue, unit: input.unit, target_date: input.targetDate, current_value: 0, status: 'in_progress' }).select('id, title, sport, target_value, current_value, unit, target_date, status').single()
+    const { data: authData } = await supabase.auth.getUser()
+    const authenticatedUserId = authData.user?.id
+    if (!authenticatedUserId) { window.alert('Tu sesión ha caducado. Inicia sesión de nuevo para crear objetivos.'); return }
+    const { data, error } = await supabase.from('goals').insert({ user_id: authenticatedUserId, title: input.title, sport, target_value: input.targetValue, unit: input.unit, target_date: input.targetDate, current_value: 0, status: 'in_progress' }).select('id, title, sport, target_value, current_value, unit, target_date, status').single()
     if (error || !data) { window.alert(`No se pudo crear el objetivo: ${error?.message ?? 'respuesta vacía'}`); return }
     setGoals(current => [{ id: data.id, title: data.title, sport: goalSportLabel(String(data.sport)), targetValue: Number(data.target_value), currentValue: Number(data.current_value ?? 0), unit: data.unit, targetDate: data.target_date, status: data.status }, ...current])
   }
