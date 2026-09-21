@@ -4,9 +4,10 @@ import './index.css'
 import { blink } from './blink/client'
 import { supabase } from './lib/supabase'
 import { aiPlanSchema, validateAiPlan, type AiPlanResponse } from './lib/ai-plan'
+import { Goals, type Goal, type GoalLog } from './goals'
 // Supabase is the canonical persistence layer for users, workouts, and workout exercises.
 
-type Section = 'summary' | 'history' | 'planner' | 'exercises'
+type Section = 'summary' | 'history' | 'planner' | 'exercises' | 'goals'
 type Workout = { id: string; title: string; type: string; date: string; duration: string; rpe: number; warmupComment?: string; cooldownComment?: string; gpxSplits?: string[]; distance?: string; pace?: string; exercises?: Exercise[]; muscleGroupCounts?: Record<string, number> }
 type WorkoutRow = { id: string; title: string; type: string; workout_date: string; duration_minutes: number | null; distance_km: number | null; average_pace_seconds: number | null; rpe: number | null; intensity: string | null; notes: string | null; warmup_comment: string | null; cooldown_comment: string | null; gpx_splits: string[] | string | null; elevation_gain_m: number | null; elevation_loss_m: number | null; start_time: string | null; end_time: string | null; created_at: string; userId: string }
 type Exercise = { id: string; name: string; group: string; sets: number; reps: number; weight: number }
@@ -73,6 +74,7 @@ const navItems: { id: Section; label: string; icon: string }[] = [
   { id: 'history', label: 'Historial', icon: '◷' },
   { id: 'planner', label: 'Planificador IA', icon: '✦' },
   { id: 'exercises', label: 'Ejercicios y grupos', icon: '▦' },
+  { id: 'goals', label: 'Objetivos', icon: '◎' },
 ]
 
 function parseGpxFile(file: File): Promise<GpxSummary> {
@@ -179,8 +181,32 @@ function App() {
   const [authPassword, setAuthPassword] = useState('')
   const [authError, setAuthError] = useState('')
   const [authBusy, setAuthBusy] = useState(false)
+  const [goals, setGoals] = useState<Goal[]>([])
+  const [goalsLoading, setGoalsLoading] = useState(false)
+  const [selectedGoal, setSelectedGoal] = useState<Goal | null>(null)
+  const [goalLogs, setGoalLogs] = useState<GoalLog[]>([])
 
   const loadWorkouts = async (userId: string) => { const { data, error } = await supabase.from('workouts').select('*').eq('user_id', userId).order('created_at', { ascending: false }); if (error) window.alert(error.message); else { const rows = data ?? []; const workoutIds = rows.map(row => row.id); const { data: gymLogs } = workoutIds.length ? await supabase.from('gym_logs').select('workout_id, exercises(muscle_groups(name))').in('workout_id', workoutIds) : { data: [] }; const groupsByWorkout = new Map<string, Record<string, number>>(); (gymLogs ?? []).forEach(log => { const relation = log.exercises as { muscle_groups?: { name?: string } | null } | null; const group = relation?.muscle_groups?.name; if (!group) return; const counts = groupsByWorkout.get(log.workout_id) ?? {}; counts[group] = (counts[group] ?? 0) + 1; groupsByWorkout.set(log.workout_id, counts) }); setWorkouts(rows.map(row => ({ id: row.id, title: row.title, type: row.type, date: row.workout_date, duration: `${row.duration_minutes ?? 0} min`, rpe: Number(row.rpe ?? String(row.intensity ?? '').replace(/\D/g, '')) || 5, warmupComment: row.warmup_comment ?? '', cooldownComment: row.cooldown_comment ?? '', distance: row.distance_km?.toString(), pace: typeof row.average_pace_seconds === 'number' ? `${Math.floor(row.average_pace_seconds / 60)}:${String(row.average_pace_seconds % 60).padStart(2, '0')}` : undefined, gpxSplits: Array.isArray(row.gpx_splits) ? row.gpx_splits : typeof row.gpx_splits === 'string' ? (() => { try { const parsed: unknown = JSON.parse(row.gpx_splits); return Array.isArray(parsed) ? parsed.map(String) : [] } catch { return [] } })() : undefined, muscleGroupCounts: groupsByWorkout.get(row.id) }))); setWorkoutsLoading(false) } }
+  const loadGoals = async (userId: string) => {
+    setGoalsLoading(true)
+    const { data, error } = await supabase.from('goals').select('id, title, sport, target_value, current_value, unit, target_date, status').eq('user_id', userId).order('target_date', { ascending: true })
+    if (error) window.alert(`No se pudieron cargar tus objetivos: ${error.message}`)
+    else setGoals((data ?? []).map(row => ({ id: row.id, title: row.title, sport: row.sport, targetValue: Number(row.target_value), currentValue: Number(row.current_value ?? 0), unit: row.unit, targetDate: row.target_date, status: row.status })))
+    setGoalsLoading(false)
+  }
+  const selectGoal = async (goal: Goal) => {
+    setSelectedGoal(goal)
+    const { data, error } = await supabase.from('goal_logs').select('id, recorded_value, ai_feedback, recorded_at').eq('goal_id', goal.id).order('recorded_at', { ascending: false })
+    if (error) window.alert(`No se pudo cargar el historial del objetivo: ${error.message}`)
+    else setGoalLogs((data ?? []).map(row => ({ id: row.id, recordedValue: Number(row.recorded_value), aiFeedback: row.ai_feedback, recordedAt: row.recorded_at })))
+  }
+  const createGoal = async (input: Omit<Goal, 'id' | 'currentValue' | 'status'>) => {
+    if (!currentUserId) return
+    const { data, error } = await supabase.from('goals').insert({ user_id: currentUserId, title: input.title, sport: input.sport, target_value: input.targetValue, unit: input.unit, target_date: input.targetDate, current_value: 0, status: 'in_progress' }).select('id, title, sport, target_value, current_value, unit, target_date, status').single()
+    if (error || !data) { window.alert(`No se pudo crear el objetivo: ${error?.message ?? 'respuesta vacía'}`); return }
+    setGoals(current => [{ id: data.id, title: data.title, sport: data.sport, targetValue: Number(data.target_value), currentValue: Number(data.current_value ?? 0), unit: data.unit, targetDate: data.target_date, status: data.status }, ...current])
+  }
+
   const loadSavedPlans = async (userId: string) => {
     setPlansLoading(true)
     const { data: plans, error } = await supabase.from('training_plans').select('*').eq('user_id', userId).order('created_at', { ascending: false })
@@ -194,7 +220,7 @@ function App() {
     setSavedPlans((plans ?? []).map(row => ({ id: row.id, title: row.title, goal: row.goal, summary: row.summary, durationWeeks: row.duration_weeks, sessionsPerWeek: row.sessions_per_week, status: row.status, createdAt: row.created_at, sessions: (sessions ?? []).filter(session => session.plan_id === row.id).map(session => ({ id: session.id, weekNumber: session.week_number, dayLabel: session.day_label, scheduledDate: session.scheduled_date, title: session.title, type: session.type, durationMinutes: session.duration_minutes, intensity: session.intensity, status: session.status, notes: session.notes, exercises: (exercises ?? []).filter(exercise => exercise.session_id === session.id).map(exercise => ({ name: exercise.name_snapshot, sets: exercise.sets, reps: exercise.reps })) })) })))
     setPlansLoading(false)
   }
-  useEffect(() => { const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => { const userId = session?.user.id ?? null; setCurrentUserId(userId); setCurrentUserName(getUserName(session?.user ?? null)); if (userId) { void loadWorkouts(userId); void loadSavedPlans(userId) } else { setWorkouts([]); setSavedPlans([]); setWorkoutsLoading(false) } setAuthLoading(false) }); void supabase.auth.getSession().then(({ data }) => { const userId = data.session?.user.id ?? null; setCurrentUserId(userId); setCurrentUserName(getUserName(data.session?.user ?? null)); if (userId) { void loadWorkouts(userId); void loadSavedPlans(userId) } else setWorkoutsLoading(false); setAuthLoading(false) }); return () => listener.subscription.unsubscribe() }, [])
+  useEffect(() => { const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => { const userId = session?.user.id ?? null; setCurrentUserId(userId); setCurrentUserName(getUserName(session?.user ?? null)); if (userId) { void loadWorkouts(userId); void loadSavedPlans(userId); void loadGoals(userId) } else { setWorkouts([]); setSavedPlans([]); setGoals([]); setWorkoutsLoading(false) } setAuthLoading(false) }); void supabase.auth.getSession().then(({ data }) => { const userId = data.session?.user.id ?? null; setCurrentUserId(userId); setCurrentUserName(getUserName(data.session?.user ?? null)); if (userId) { void loadWorkouts(userId); void loadSavedPlans(userId); void loadGoals(userId) } else setWorkoutsLoading(false); setAuthLoading(false) }); return () => listener.subscription.unsubscribe() }, [])
 
   useEffect(() => {
     const pending = sessionStorage.getItem('fitness-planner-pending-answers')
@@ -271,6 +297,7 @@ function App() {
         setSavedPlans(current => current.map(plan => ({ ...plan, sessions: plan.sessions.map(session => session.id === pendingPlanSession.id ? { ...session, status: 'completed' } : session) })))
       }
       setWorkouts(current => [workout, ...current])
+      void evaluateWorkoutGoals(workout)
     } catch (error) { window.alert(error instanceof Error ? error.message : 'No se pudo guardar el entrenamiento.'); return }
     setNewTitle('')
     setNewWorkoutDate(new Date().toISOString().slice(0, 10))
@@ -444,6 +471,27 @@ function App() {
     }
   }
 
+  const evaluateWorkoutGoals = async (workout: Workout) => {
+    if (!currentUserId) return
+    const activeGoals = goals.filter(goal => goal.status === 'in_progress')
+    if (!activeGoals.length || !blink.auth.isAuthenticated()) return
+    try {
+      const { object } = await blink.ai.generateObject({ prompt: `Evalúa si este entrenamiento representa progreso relevante para algún objetivo. Devuelve solo progreso medible y coherente. Entrenamiento: ${JSON.stringify(workout)}. Objetivos activos: ${JSON.stringify(activeGoals)}`, schema: { type: 'object', properties: { progress: { type: 'array', items: { type: 'object', properties: { goalId: { type: 'string' }, achievedValue: { type: 'number' }, feedback: { type: 'string' } }, required: ['goalId', 'achievedValue', 'feedback'] } } }, required: ['progress'] } })
+      const progress = Array.isArray((object as { progress?: unknown }).progress) ? (object as { progress: { goalId: string; achievedValue: number; feedback: string }[] }).progress : []
+      for (const item of progress) {
+        const goal = activeGoals.find(candidate => candidate.id === item.goalId)
+        if (!goal || !Number.isFinite(item.achievedValue) || item.achievedValue <= goal.currentValue) continue
+        const status = item.achievedValue >= goal.targetValue ? 'achieved' : 'in_progress'
+        const { error: logError } = await supabase.from('goal_logs').insert({ goal_id: goal.id, workout_id: workout.id, recorded_value: item.achievedValue, ai_feedback: item.feedback })
+        const { error: goalError } = await supabase.from('goals').update({ current_value: item.achievedValue, status }).eq('id', goal.id).eq('user_id', currentUserId)
+        if (logError || goalError) continue
+        const updated = { ...goal, currentValue: item.achievedValue, status }
+        setGoals(current => current.map(candidate => candidate.id === goal.id ? updated : candidate))
+        if (selectedGoal?.id === goal.id) void selectGoal(updated)
+      }
+    } catch (error) { console.error('No se pudieron evaluar los objetivos:', error) }
+  }
+
   const handleAuth = async () => { setAuthBusy(true); setAuthError(''); const result = authMode === 'login' ? await supabase.auth.signInWithPassword({ email: authEmail, password: authPassword }) : await supabase.auth.signUp({ email: authEmail, password: authPassword }); if (result.error) setAuthError(result.error.message); setAuthBusy(false) }
 
   const selectWorkout = async (workout: Workout) => {
@@ -471,10 +519,11 @@ function App() {
       <div className="sidebar-bottom"><button className="help-button">? <span>Ayuda y consejos</span></button><div className="profile"><div className="avatar">{currentUserName.slice(0, 2).toUpperCase()}</div><div><strong>{currentUserName}</strong><small>Mi perfil</small></div><span>•••</span></div></div>
     </aside>
     <main className="main-content">
-      <header className="topbar"><div><p className="eyebrow">{section === 'summary' ? `BUENOS DÍAS, ${currentUserName.toUpperCase()}` : section === 'history' ? 'TU ACTIVIDAD' : section === 'planner' ? 'ASISTENTE PERSONAL' : 'BIBLIOTECA'}</p><h1>{section === 'summary' ? 'Tu resumen' : section === 'history' ? 'Historial de entrenamientos' : section === 'planner' ? 'Planificador IA' : 'Ejercicios y grupos'}</h1></div>{section === 'summary' && <button className="primary-button" onClick={() => setShowForm(true)}>＋ Registrar entrenamiento</button>}</header>
+      <header className="topbar"><div><p className="eyebrow">{section === 'summary' ? `BUENOS DÍAS, ${currentUserName.toUpperCase()}` : section === 'history' ? 'TU ACTIVIDAD' : section === 'planner' ? 'ASISTENTE PERSONAL' : section === 'goals' ? 'SEGUIMIENTO PERSONAL' : 'BIBLIOTECA'}</p><h1>{section === 'summary' ? 'Tu resumen' : section === 'history' ? 'Historial de entrenamientos' : section === 'planner' ? 'Planificador IA' : section === 'goals' ? 'Objetivos' : 'Ejercicios y grupos'}</h1></div>{section === 'summary' && <button className="primary-button" onClick={() => setShowForm(true)}>＋ Registrar entrenamiento</button>}</header>
       {authLoading || workoutsLoading ? <div className="loading-state">Cargando tus entrenamientos…</div> : section === 'summary' && <Summary workouts={workouts} savedPlans={savedPlans} muscleGroupRecords={muscleGroupRecords} onHistory={() => setSection('history')} onSelectWorkout={selectWorkout} onStartPlannedSession={startPlannedSession} calendarMode={calendarMode} setCalendarMode={setCalendarMode} />}
       {section === 'history' && <History workouts={workouts} onAdd={() => setShowForm(true)} onSelect={selectWorkout} />}
       {section === 'planner' && <><Planner answers={plannerAnswers} setAnswers={setPlannerAnswers} step={plannerStep} setStep={setPlannerStep} onGenerate={generatePlan} onSavePlan={saveGeneratedPlan} plan={plan} planSaving={planSaving} planSaved={planSaved} /><SavedPlans plans={savedPlans} loading={plansLoading} selectedPlanId={selectedPlanId} onSelect={setSelectedPlanId} onDelete={deleteSavedPlan} /></>}
+      {section === 'goals' && <Goals goals={goals} loading={goalsLoading} selectedGoal={selectedGoal} logs={goalLogs} onCreate={createGoal} onSelect={selectGoal} />}
       {section === 'exercises' && <ExerciseLibrary catalog={catalog} groups={muscleGroups} groupIds={muscleGroupIds} muscleGroupRecords={muscleGroupRecords} onAddGroup={async group => { const { error } = await supabase.from('muscle_groups').insert({ name: group, description: group, image_url: null }); if (error) window.alert(`No se pudo guardar el grupo muscular: ${error.message}`); else await refreshExerciseLibrary() }} onUpdateGroup={async (groupId, description, imageUrl) => { const { error } = await supabase.from('muscle_groups').update({ description, image_url: imageUrl }).eq('id', groupId); if (error) window.alert(`No se pudo actualizar el grupo muscular: ${error.message}`); else await refreshExerciseLibrary() }} onAddExercise={async exercise => { const muscleGroupId = muscleGroupIds[exercise.group]; if (!muscleGroupId) { window.alert('Selecciona un grupo muscular válido.'); return } const { error } = await supabase.from('exercises').insert({ name: exercise.name, muscle_group_id: muscleGroupId }); if (error) window.alert(`No se pudo guardar el ejercicio: ${error.message}`); else await refreshExerciseLibrary() }} />}
     </main>
     {showForm && <WorkoutModal plannedSession={pendingPlanSession} catalog={catalog} groups={muscleGroups} muscleGroupRecords={muscleGroupRecords} newTitle={newTitle} setNewTitle={setNewTitle} newType={newType} setNewType={setNewType} workoutDate={newWorkoutDate} setWorkoutDate={setNewWorkoutDate} sessionDuration={sessionDuration} setSessionDuration={setSessionDuration} warmupComment={warmupComment} setWarmupComment={setWarmupComment} cooldownComment={cooldownComment} setCooldownComment={setCooldownComment} rpe={rpe} setRpe={setRpe} selectedExercises={selectedExercises} setSelectedExercises={setSelectedExercises} search={exerciseSearch} setSearch={setExerciseSearch} group={exerciseGroup} setGroup={setExerciseGroup} runningMode={runningMode} setRunningMode={setRunningMode} runningDistance={runningDistance} setRunningDistance={setRunningDistance} runningTime={runningTime} setRunningTime={setRunningTime} realPace={realPace} setRealPace={setRealPace} gpxFileName={gpxFileName} setGpxFileName={setGpxFileName} gpxSummary={gpxSummary} setGpxSummary={setGpxSummary} targetPace={targetPace} setTargetPace={setTargetPace} runningBlocks={runningBlocks} setRunningBlocks={setRunningBlocks} swimmingBlocks={swimmingBlocks} setSwimmingBlocks={setSwimmingBlocks} onSave={addWorkout} onClose={() => setShowForm(false)} />}
