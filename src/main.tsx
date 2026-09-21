@@ -306,7 +306,7 @@ function App() {
         setSavedPlans(current => current.map(plan => ({ ...plan, sessions: plan.sessions.map(session => session.id === pendingPlanSession.id ? { ...session, status: 'completed' } : session) })))
       }
       setWorkouts(current => [workout, ...current])
-      void evaluateWorkoutGoals(workout)
+      await evaluateWorkoutGoals(workout)
     } catch (error) { window.alert(error instanceof Error ? error.message : 'No se pudo guardar el entrenamiento.'); return }
     setNewTitle('')
     setNewWorkoutDate(new Date().toISOString().slice(0, 10))
@@ -496,9 +496,10 @@ function App() {
         if (!Number.isFinite(achievedValue) || achievedValue <= goal.currentValue) continue
         const status = achievedValue >= goal.targetValue ? 'achieved' : 'in_progress'
         const feedback = matchingExercises.length ? `Mejor registro detectado: ${achievedValue} ${goal.unit}.` : 'Progreso detectado en una sesión relacionada con este objetivo.'
-        const { error: logError } = await supabase.from('goal_logs').insert({ goal_id: goal.id, workout_id: workout.id, recorded_value: achievedValue, ai_feedback: feedback })
         const { error: goalError } = await supabase.from('goals').update({ current_value: achievedValue, status }).eq('id', goal.id).eq('user_id', currentUserId)
-        if (logError || goalError) continue
+        if (goalError) { console.error('No se pudo actualizar el objetivo:', goalError); continue }
+        const { error: logError } = await supabase.from('goal_logs').insert({ goal_id: goal.id, workout_id: workout.id, recorded_value: achievedValue, ai_feedback: feedback })
+        if (logError) { console.error('No se pudo guardar el historial del objetivo:', logError); continue }
         const updated = { ...goal, currentValue: achievedValue, status }
         setGoals(current => current.map(candidate => candidate.id === goal.id ? updated : candidate))
         if (selectedGoal?.id === goal.id) void selectGoal(updated)
