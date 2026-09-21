@@ -187,11 +187,13 @@ function App() {
   const [goalLogs, setGoalLogs] = useState<GoalLog[]>([])
 
   const loadWorkouts = async (userId: string) => { const { data, error } = await supabase.from('workouts').select('*').eq('user_id', userId).order('created_at', { ascending: false }); if (error) window.alert(error.message); else { const rows = data ?? []; const workoutIds = rows.map(row => row.id); const { data: gymLogs } = workoutIds.length ? await supabase.from('gym_logs').select('workout_id, exercises(muscle_groups(name))').in('workout_id', workoutIds) : { data: [] }; const groupsByWorkout = new Map<string, Record<string, number>>(); (gymLogs ?? []).forEach(log => { const relation = log.exercises as { muscle_groups?: { name?: string } | null } | null; const group = relation?.muscle_groups?.name; if (!group) return; const counts = groupsByWorkout.get(log.workout_id) ?? {}; counts[group] = (counts[group] ?? 0) + 1; groupsByWorkout.set(log.workout_id, counts) }); setWorkouts(rows.map(row => ({ id: row.id, title: row.title, type: row.type, date: row.workout_date, duration: `${row.duration_minutes ?? 0} min`, rpe: Number(row.rpe ?? String(row.intensity ?? '').replace(/\D/g, '')) || 5, warmupComment: row.warmup_comment ?? '', cooldownComment: row.cooldown_comment ?? '', distance: row.distance_km?.toString(), pace: typeof row.average_pace_seconds === 'number' ? `${Math.floor(row.average_pace_seconds / 60)}:${String(row.average_pace_seconds % 60).padStart(2, '0')}` : undefined, gpxSplits: Array.isArray(row.gpx_splits) ? row.gpx_splits : typeof row.gpx_splits === 'string' ? (() => { try { const parsed: unknown = JSON.parse(row.gpx_splits); return Array.isArray(parsed) ? parsed.map(String) : [] } catch { return [] } })() : undefined, muscleGroupCounts: groupsByWorkout.get(row.id) }))); setWorkoutsLoading(false) } }
+  const goalSportLabel = (sport: string) => ({ gym: 'Gimnasio', running: 'Running', swimming: 'Natación', custom: 'Personalizado', 'Gimnasio': 'Gimnasio', 'Running': 'Running', 'Natación': 'Natación', 'Personalizado': 'Personalizado' }[sport] ?? sport)
+  const goalSportValue = (sport: string) => ({ 'Gimnasio': 'gym', 'Running': 'running', 'Natación': 'swimming', 'Personalizado': 'custom' }[sport] ?? 'custom')
   const loadGoals = async (userId: string) => {
     setGoalsLoading(true)
     const { data, error } = await supabase.from('goals').select('id, title, sport, target_value, current_value, unit, target_date, status').eq('user_id', userId).order('target_date', { ascending: true })
     if (error) window.alert(`No se pudieron cargar tus objetivos: ${error.message}`)
-    else setGoals((data ?? []).map(row => ({ id: row.id, title: row.title, sport: row.sport, targetValue: Number(row.target_value), currentValue: Number(row.current_value ?? 0), unit: row.unit, targetDate: row.target_date, status: row.status })))
+    else setGoals((data ?? []).map(row => ({ id: row.id, title: row.title, sport: goalSportLabel(String(row.sport)), targetValue: Number(row.target_value), currentValue: Number(row.current_value ?? 0), unit: row.unit, targetDate: row.target_date, status: row.status })))
     setGoalsLoading(false)
   }
   const selectGoal = async (goal: Goal) => {
@@ -202,9 +204,10 @@ function App() {
   }
   const createGoal = async (input: Omit<Goal, 'id' | 'currentValue' | 'status'>) => {
     if (!currentUserId) return
-    const { data, error } = await supabase.from('goals').insert({ user_id: currentUserId, title: input.title, sport: input.sport, target_value: input.targetValue, unit: input.unit, target_date: input.targetDate, current_value: 0, status: 'in_progress' }).select('id, title, sport, target_value, current_value, unit, target_date, status').single()
+    const sport = goalSportValue(input.sport)
+    const { data, error } = await supabase.from('goals').insert({ user_id: currentUserId, title: input.title, sport, target_value: input.targetValue, unit: input.unit, target_date: input.targetDate, current_value: 0, status: 'in_progress' }).select('id, title, sport, target_value, current_value, unit, target_date, status').single()
     if (error || !data) { window.alert(`No se pudo crear el objetivo: ${error?.message ?? 'respuesta vacía'}`); return }
-    setGoals(current => [{ id: data.id, title: data.title, sport: data.sport, targetValue: Number(data.target_value), currentValue: Number(data.current_value ?? 0), unit: data.unit, targetDate: data.target_date, status: data.status }, ...current])
+    setGoals(current => [{ id: data.id, title: data.title, sport: goalSportLabel(String(data.sport)), targetValue: Number(data.target_value), currentValue: Number(data.current_value ?? 0), unit: data.unit, targetDate: data.target_date, status: data.status }, ...current])
   }
 
   const loadSavedPlans = async (userId: string) => {
