@@ -289,7 +289,10 @@ function App() {
   }
 
   const addWorkout = async () => {
-    if (!newTitle.trim()) return
+    if (!newTitle.trim()) {
+      window.alert('Para poder guardar la sesión, añade un nombre al entrenamiento.')
+      return
+    }
     if (!currentUserId) { window.alert('Inicia sesión para guardar tu entrenamiento.'); return }
     const details = newType === 'Gimnasio' && selectedExercises.length > 0 ? ` · ${selectedExercises.length} ejercicios` : ''
     const durationValue = newType === 'Running' && runningTime ? Number(runningTime) : Number(sessionDuration)
