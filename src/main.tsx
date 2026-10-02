@@ -7,6 +7,7 @@ import { blink } from './blink/client'
 import { supabase } from './lib/supabase'
 import { aiPlanSchema, validateAiPlan, type AiPlanResponse } from './lib/ai-plan'
 import { Goals, type Goal, type GoalLog } from './goals'
+import { Plans } from './plans'
 // Supabase is the canonical persistence layer for users, workouts, and workout exercises.
 
 type Section = 'summary' | 'history' | 'planner' | 'exercises' | 'goals'
@@ -574,6 +575,7 @@ function App() {
     <main className="main-content">
       <header className="topbar"><div><p className="eyebrow">{section === 'summary' ? `BUENOS DÍAS, ${currentUserName.toUpperCase()}` : section === 'history' ? 'TU ACTIVIDAD' : section === 'planner' ? 'ASISTENTE PERSONAL' : section === 'goals' ? 'SEGUIMIENTO PERSONAL' : 'BIBLIOTECA'}</p><h1>{section === 'summary' ? 'Tu resumen' : section === 'history' ? 'Historial de entrenamientos' : section === 'planner' ? 'Planificador IA' : section === 'goals' ? 'Objetivos' : 'Ejercicios y grupos'}</h1></div>{section === 'summary' && <button className="primary-button" onClick={() => setShowForm(true)}>＋ Registrar entrenamiento</button>}</header>
       {authLoading || workoutsLoading ? <div className="loading-state">Cargando tus entrenamientos…</div> : section === 'summary' && <Summary workouts={workouts} goals={goals} savedPlans={savedPlans} muscleGroupRecords={muscleGroupRecords} onHistory={() => setSection('history')} onGoals={() => setSection('goals')} onSelectWorkout={selectWorkout} onStartPlannedSession={startPlannedSession} calendarMode={calendarMode} setCalendarMode={setCalendarMode} />}
+      {section === 'summary' && !authLoading && !workoutsLoading && <Plans userId={currentUserId} catalog={catalog} />}
       {section === 'history' && <History workouts={workouts} onAdd={() => setShowForm(true)} onSelect={selectWorkout} />}
       {section === 'planner' && <><Planner answers={plannerAnswers} setAnswers={setPlannerAnswers} step={plannerStep} setStep={setPlannerStep} onGenerate={generatePlan} onSavePlan={saveGeneratedPlan} plan={plan} planSaving={planSaving} planSaved={planSaved} /><SavedPlans plans={savedPlans} loading={plansLoading} selectedPlanId={selectedPlanId} onSelect={setSelectedPlanId} onDelete={deleteSavedPlan} /></>}
       {section === 'goals' && <Goals goals={goals} loading={goalsLoading} selectedGoal={selectedGoal} logs={goalLogs} onCreate={createGoal} onUpdate={updateGoal} onDelete={deleteGoal} onSelect={selectGoal} />}
