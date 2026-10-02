@@ -752,6 +752,7 @@ function WorkoutModal({ plannedMode = false, plannedSession, catalog, groups, mu
   }
   const handleGpx = (event: React.ChangeEvent<HTMLInputElement>) => { const file = event.target.files?.[0]; if (file) void parseGpx(file).catch(error => window.alert(error instanceof Error ? error.message : 'No se pudo leer el archivo GPX.')) }
   const [activeBlockId, setActiveBlockId] = useState(gymBlocks[0]?.id ?? '')
+  const [editingLiveExerciseId, setEditingLiveExerciseId] = useState<string | null>(null)
   const uniqueCatalog = catalog.filter((exercise, index, all) => all.findIndex(item => normalizeExerciseName(item.name) === normalizeExerciseName(exercise.name)) === index)
   const uniqueSelectedExercises = selectedExercises.filter((exercise, index, all) => all.findIndex(item => normalizeExerciseName(item.name) === normalizeExerciseName(exercise.name)) === index)
   const activeBlock = gymBlocks.find(block => block.id === activeBlockId) ?? gymBlocks[0]
