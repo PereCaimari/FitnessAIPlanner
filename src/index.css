@@ -100,3 +100,7 @@ nav { display: grid; gap: 7px; }.nav-item { padding: 13px 14px; text-align: left
   .block-exercise-item { display: grid; grid-template-columns: 1fr auto; align-items: center; }
   .block-exercise-item .exercise-controls { width: 100%; margin-left: 0; grid-template-columns: repeat(3, minmax(58px, 1fr)); }
 }
+.library-card-content { min-width: 0; flex: 1; }
+.library-card-content select { width: 100%; margin-top: 8px; padding: 7px 9px; border: 1px solid var(--border); border-radius: 8px; background: var(--background); color: var(--foreground); font-size: 12px; }
+.library-card-actions { display: flex; gap: 12px; align-items: center; margin-top: 10px; }
+.library-card-actions button { padding: 6px 0; font-size: 12px; }
