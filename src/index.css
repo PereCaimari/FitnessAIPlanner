@@ -76,3 +76,27 @@ nav { display: grid; gap: 7px; }.nav-item { padding: 13px 14px; text-align: left
     width: 100%;
   }
 }
+
+/* Compact gym block editor: keep the block controls visible without pushing the exercise picker down. */
+.gym-block-editor { margin-bottom: 14px; padding: 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--muted); }
+.gym-block-editor .picker-heading { margin-bottom: 6px; font-size: 12px; }
+.gym-block-editor .block-help { margin: 4px 0 8px; font-size: 11px; }
+.gym-block-row { position: relative; display: grid; grid-template-columns: minmax(0, 1.4fr) 74px 88px; gap: 7px; align-items: end; margin-top: 7px; padding: 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--card); cursor: pointer; }
+.gym-block-row.active { border-color: var(--primary); box-shadow: 0 0 0 2px #91352d1a; }
+.gym-block-row label { margin: 0; color: var(--muted-foreground); font-size: 9px; font-weight: bold; }
+.gym-block-row input { width: 100%; min-height: 32px; margin-top: 3px; padding: 6px 7px; border: 1px solid var(--border); border-radius: 6px; background: var(--background); font-size: 12px; }
+.gym-block-row .remove-block { position: absolute; top: 4px; right: 4px; padding: 1px 5px; font-size: 15px; }
+.block-exercise-list { grid-column: 1 / -1; display: grid; gap: 5px; margin-top: 2px; }
+.block-exercise-item { margin-top: 0; padding: 7px 8px; gap: 8px; border-radius: 7px; }
+.block-exercise-item .exercise-info { min-width: 0; flex: 1; }
+.block-exercise-item .exercise-info strong { font-size: 11px; }
+.block-exercise-item .exercise-info span { margin-top: 2px; font-size: 10px; }
+.block-exercise-item .exercise-controls { gap: 4px; }
+.block-exercise-item .exercise-controls input { width: 38px; min-height: 27px; padding: 3px; font-size: 11px; text-align: center; }
+.block-exercise-item .remove-exercise { font-size: 16px; }
+.block-empty { display: block; padding: 5px 7px; color: var(--muted-foreground); font-size: 10px; font-style: italic; }
+@media (max-width: 700px) {
+  .gym-block-row { grid-template-columns: minmax(0, 1fr) 60px 72px; padding: 7px; }
+  .block-exercise-item { display: grid; grid-template-columns: 1fr auto; align-items: center; }
+  .block-exercise-item .exercise-controls { width: auto; margin-left: 0; }
+}
