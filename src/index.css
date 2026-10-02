@@ -92,11 +92,11 @@ nav { display: grid; gap: 7px; }.nav-item { padding: 13px 14px; text-align: left
 .block-exercise-item .exercise-info strong { font-size: 11px; }
 .block-exercise-item .exercise-info span { margin-top: 2px; font-size: 10px; }
 .block-exercise-item .exercise-controls { gap: 4px; }
-.block-exercise-item .exercise-controls input { width: 38px; min-height: 27px; padding: 3px; font-size: 11px; text-align: center; }
+.block-exercise-item .exercise-controls { display: grid; grid-template-columns: repeat(3, minmax(48px, 58px)); gap: 5px; align-items: end; }.block-exercise-item .exercise-controls input { width: 100%; min-height: 32px; padding: 4px 3px; font-size: 13px; text-align: center; }.block-exercise-item .exercise-controls label { min-width: 0; font-size: 9px; }
 .block-exercise-item .remove-exercise { font-size: 16px; }
 .block-empty { display: block; padding: 5px 7px; color: var(--muted-foreground); font-size: 10px; font-style: italic; }
 @media (max-width: 700px) {
   .gym-block-row { grid-template-columns: minmax(0, 1fr) 60px 72px; padding: 7px; }
   .block-exercise-item { display: grid; grid-template-columns: 1fr auto; align-items: center; }
-  .block-exercise-item .exercise-controls { width: auto; margin-left: 0; }
+  .block-exercise-item .exercise-controls { width: 100%; margin-left: 0; grid-template-columns: repeat(3, minmax(58px, 1fr)); }
 }
