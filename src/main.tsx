@@ -20,7 +20,7 @@ type MuscleGroup = { id: string; name: string; description: string | null; image
 type RunningBlock = { id: number; repetitions: number; distance: number; pace: string }
 type SwimmingBlock = { id: number; repetitions: number; distance: number; strokeStyle: string; durationSeconds: number | ''; equipment: string }
 type GpxSummary = { distanceKm: number; durationMinutes: number; realPace: string; elevationGain: number; elevationLoss: number; startTime: string; endTime: string; splits: string[] }
-type SavedPlanSession = { id: string; weekNumber: number; dayLabel: string; scheduledDate: string; title: string; type: string; durationMinutes: number | null; intensity: string | null; status: string; notes: string | null; exercises: { name: string; sets: number; reps: number | null }[] }
+type SavedPlanSession = { id: string; weekNumber: number; dayLabel: string; scheduledDate: string; title: string; type: string; durationMinutes: number | null; intensity: string | null; status: string; notes: string | null; exercises: { name: string; sets: number; reps: number | null; weight: number; durationSeconds: number; measurementType: Exercise['measurementType'] }[] }
 const formatDurationInput = (seconds: number) => `${Math.floor(seconds / 60)}:${String(Math.max(0, seconds % 60)).padStart(2, '0')}`
 const parseDurationInput = (value: string) => { const parts = value.trim().split(':').map(Number); if (parts.length === 2 && parts.every(Number.isFinite)) return Math.max(0, parts[0] * 60 + parts[1]); const seconds = Number(value); return Number.isFinite(seconds) ? Math.max(0, seconds) : 0 }
 type SavedPlan = { id: string; title: string; goal: string; summary: string | null; durationWeeks: number; sessionsPerWeek: number; status: string; createdAt: string; sessions: SavedPlanSession[] }
@@ -251,7 +251,7 @@ function App() {
     const sessionIds = (sessions ?? []).map(row => row.id)
     const { data: exercises, error: exerciseError } = sessionIds.length ? await supabase.from('training_plan_exercises').select('*').in('session_id', sessionIds).order('sort_order') : { data: [], error: null }
     if (exerciseError) { window.alert(`No se pudieron cargar los ejercicios del plan: ${exerciseError.message}`); setPlansLoading(false); return }
-    setSavedPlans((plans ?? []).map(row => ({ id: row.id, title: row.title, goal: row.goal, summary: row.summary, durationWeeks: row.duration_weeks, sessionsPerWeek: row.sessions_per_week, status: row.status, createdAt: row.created_at, sessions: (sessions ?? []).filter(session => session.plan_id === row.id).map(session => ({ id: session.id, weekNumber: session.week_number, dayLabel: session.day_label, scheduledDate: session.scheduled_date, title: session.title, type: session.type, durationMinutes: session.duration_minutes, intensity: session.intensity, status: session.status, notes: session.notes, exercises: (exercises ?? []).filter(exercise => exercise.session_id === session.id).map(exercise => ({ name: exercise.name_snapshot, sets: exercise.sets, reps: exercise.reps })) })) })))
+    setSavedPlans((plans ?? []).map(row => ({ id: row.id, title: row.title, goal: row.goal, summary: row.summary, durationWeeks: row.duration_weeks, sessionsPerWeek: row.sessions_per_week, status: row.status, createdAt: row.created_at, sessions: (sessions ?? []).filter(session => session.plan_id === row.id).map(session => ({ id: session.id, weekNumber: session.week_number, dayLabel: session.day_label, scheduledDate: session.scheduled_date, title: session.title, type: session.type, durationMinutes: session.duration_minutes, intensity: session.intensity, status: session.status, notes: session.notes, exercises: (exercises ?? []).filter(exercise => exercise.session_id === session.id).map(exercise => { const libraryExercise = catalog.find(item => item.id === exercise.exercise_id || normalizeExerciseName(item.name) === normalizeExerciseName(exercise.name_snapshot)); const measurementType = libraryExercise?.measurementType ?? (exercise.notes?.includes('segundos') ? 'time_only' : exercise.weight_kg ? 'reps_weight' : 'reps_only'); return { name: exercise.name_snapshot, sets: exercise.sets, reps: exercise.reps, weight: Number(exercise.weight_kg ?? 0), durationSeconds: Number(exercise.notes?.match(/\d+/)?.[0] ?? 0), measurementType } }) })) })))
     setPlansLoading(false)
   }
   useEffect(() => { const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => { const userId = session?.user.id ?? null; setCurrentUserId(userId); setCurrentUserName(getUserName(session?.user ?? null)); if (userId) { void loadWorkouts(userId); void loadSavedPlans(userId); void loadGoals(userId) } else { setWorkouts([]); setSavedPlans([]); setGoals([]); setWorkoutsLoading(false) } setAuthLoading(false) }); void supabase.auth.getSession().then(({ data }) => { const userId = data.session?.user.id ?? null; setCurrentUserId(userId); setCurrentUserName(getUserName(data.session?.user ?? null)); if (userId) { void loadWorkouts(userId); void loadSavedPlans(userId); void loadGoals(userId) } else setWorkoutsLoading(false); setAuthLoading(false) }); return () => listener.subscription.unsubscribe() }, [])
@@ -423,12 +423,17 @@ function App() {
 
   const startPlannedSession = (session: SavedPlanSession) => {
     setPendingPlanSession(session)
+    setPlannedForm(false)
     setNewTitle(session.title)
     setNewType(session.type)
     setNewWorkoutDate(session.scheduledDate)
     setSessionDuration(String(session.durationMinutes ?? 45))
+    setWarmupComment('')
+    setCooldownComment('')
     setRpe('5')
-    setSelectedExercises(session.exercises.map((exercise, index) => { const libraryExercise = catalog.find(item => normalizeExerciseName(item.name) === normalizeExerciseName(exercise.name)); return { id: libraryExercise?.id ?? `plan-${session.id}-${index}`, name: libraryExercise?.name ?? exercise.name, group: libraryExercise?.group ?? 'Plan', sets: exercise.sets, reps: exercise.reps ?? 1, weight: 0 } }))
+    const plannedExercises = session.exercises.map((exercise, index) => { const libraryExercise = catalog.find(item => normalizeExerciseName(item.name) === normalizeExerciseName(exercise.name)); return { id: libraryExercise?.id ?? `plan-${session.id}-${index}`, name: libraryExercise?.name ?? exercise.name, group: libraryExercise?.group ?? 'Plan', sets: exercise.sets, reps: exercise.reps ?? 1, weight: exercise.weight ?? 0, durationSeconds: exercise.durationSeconds ?? 0, measurementType: exercise.measurementType ?? libraryExercise?.measurementType ?? 'reps_weight' as const } })
+    setSelectedExercises(plannedExercises)
+    setGymBlocks([{ id: crypto.randomUUID(), blockType: 'Entrenamiento planificado', rounds: 1, restBetweenRoundsSeconds: '', exerciseIds: plannedExercises.map(exercise => exercise.id) }])
     setShowForm(true)
   }
 
