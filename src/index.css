@@ -112,6 +112,6 @@ nav { display: grid; gap: 7px; }.nav-item { padding: 13px 14px; text-align: left
 .library-card-actions button { min-height: 32px; padding: 7px 12px; border-radius: 7px; font-size: 12px; transition: background .2s ease, color .2s ease, border-color .2s ease, transform .2s ease; }
 .library-card-actions .secondary-button { border-color: var(--border); background: var(--muted); color: var(--foreground); }
 .library-card-actions .secondary-button:hover { border-color: var(--primary); background: #eadbd0; color: var(--primary); }
-.library-card-actions .danger-button { color: #a34b42; }
-.library-card-actions .danger-button:hover { background: #f5e1dc; color: #7e2923; transform: translateY(-1px); }
+.library-card-actions .danger-button { display: inline-flex; align-items: center; justify-content: center; color: #a34b42; background: #f5e1dc; border: 1px solid #e8c8c1; }
+.library-card-actions .danger-button:hover { background: #edcbc4; color: #7e2923; transform: translateY(-1px); }
 @media (max-width: 520px) { .library-card { min-height: 0; } .library-card-actions { flex-wrap: wrap; } }
