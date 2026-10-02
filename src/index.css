@@ -103,7 +103,14 @@ nav { display: grid; gap: 7px; }.nav-item { padding: 13px 14px; text-align: left
 .library-intro { max-width: 620px; margin: 8px 0 0; color: var(--muted-foreground); font-size: 13px; line-height: 1.5; }
 .library-card { display: flex; align-items: flex-start; gap: 14px; min-height: 174px; transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease; }
 .library-card:hover { border-color: #c7a58f; box-shadow: 0 10px 24px #30292314; transform: translateY(-2px); }
+.library-card.editing { border-color: var(--primary); box-shadow: 0 10px 24px #91352d18; }
 .library-card-content { min-width: 0; flex: 1; }
+.exercise-editor { display: grid; gap: 10px; }
+.exercise-editor > label { display: grid; gap: 6px; color: var(--muted-foreground); font-size: 12px; font-weight: bold; }
+.exercise-editor input, .exercise-editor select { min-height: 38px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--background); color: var(--foreground); font-size: 13px; }
+.exercise-editor .exercise-group-checks { margin: 2px 0; }
+.exercise-editor .primary-group-select { margin: 0; }
+.exercise-editor .library-card-actions { margin-top: 2px; }
 .library-card-content > strong { display: block; font-size: 15px; line-height: 1.25; }
 .library-card-content > span { display: block; margin-top: 5px; color: var(--muted-foreground); font-size: 11px; }
 .library-card-content select { width: 100%; margin-top: 14px; padding: 9px 10px; border: 1px solid var(--border); border-radius: 9px; background: var(--background); color: var(--foreground); font-size: 12px; transition: border-color .2s ease, box-shadow .2s ease; }
